@@ -46,7 +46,8 @@ internal object DesktopUpdateChecker {
         }
     }
 
-    suspend fun check(): UpdateInfo? = runCatching {
+    suspend fun check(): UpdateInfo? = null // Disabled in BitChord Windows Edition
+    private suspend fun checkInternal(): UpdateInfo? = runCatching {
         val response = http.get(LATEST_RELEASE_URL) {
             header("Accept", "application/vnd.github+json")
         }
