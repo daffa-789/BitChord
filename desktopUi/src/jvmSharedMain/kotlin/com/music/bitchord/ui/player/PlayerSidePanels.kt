@@ -153,7 +153,6 @@ fun QueueSidePanel(
         queue = queue,
         currentIndex = queueIndex,
         autoplayEnabled = autoplayEnabled,
-        controlsLocked = rememberControlsLocked(),
         onJumpTo = onJumpTo,
         onRemove = onRemove,
         onMove = onMove,

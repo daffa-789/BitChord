@@ -5,7 +5,6 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntSize
 import com.music.bitchord.data.canvas.CanvasArtwork
-import com.music.bitchord.data.listentogether.PartyMember
 import com.music.bitchord.data.lyrics.LyricLine
 import com.music.bitchord.data.lyrics.LyricsSource
 import com.music.bitchord.data.model.Song
@@ -24,7 +23,7 @@ import kotlinx.coroutines.flow.StateFlow
  * The player itself — its layout, its gestures, its animations, the lyric sheet
  * and the queue — is one piece of code for the phone and the desktop alike.
  * What differs is underneath it: where settings are kept, how a looping clip is
- * decoded, what an audio output is, which party this device is in. Each
+ * decoded, what an audio output is, where the lyrics sit on the clock. Each
  * application answers those once, here, and installs its answer with
  * [PlayerPlatform.install] before the player is first drawn.
  */
@@ -67,8 +66,7 @@ interface PlayerHost {
     /** The negotiated output format, as the pipeline row and the hi-res shine read it. */
     val outputFormat: StateFlow<OutputFormatUi>
 
-    /** The Listen Together party this device is in, as the player draws it. */
-    val party: StateFlow<PartyUi>
+
 
     suspend fun translateLyrics(
         trackId: String,
@@ -231,20 +229,6 @@ data class OutputFormatUi(
     /** Whether the negotiated output could carry more than 16-bit / 48 kHz. */
     val carriesHiRes: Boolean = false,
 )
-
-data class PartyUi(
-    val inParty: Boolean = false,
-    val controlsLocked: Boolean = false,
-    val members: List<PartyMember> = emptyList(),
-    val you: PartyMember? = null,
-    val code: String? = null,
-)
-
-sealed interface LyricsTranslationResult {
-    data class Translated(val lines: List<LyricLine>) : LyricsTranslationResult
-    data class SameLanguage(val language: String) : LyricsTranslationResult
-    data object Unavailable : LyricsTranslationResult
-}
 
 sealed interface LyricsRomanizationResult {
     data class Romanized(val lines: List<LyricLine>) : LyricsRomanizationResult

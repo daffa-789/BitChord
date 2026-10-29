@@ -21,7 +21,6 @@ import com.music.bitchord.ui.player.LyricsTranslationResult
 import com.music.bitchord.ui.player.MAX_LYRICS_OFFSET_MS
 import com.music.bitchord.ui.player.MIN_LYRICS_OFFSET_MS
 import com.music.bitchord.ui.player.OutputFormatUi
-import com.music.bitchord.ui.player.PartyUi
 import com.music.bitchord.ui.player.PlayerHost
 import com.music.bitchord.ui.player.PlayerSettingsSource
 import com.music.bitchord.ui.player.SystemVolume
@@ -119,17 +118,6 @@ internal object DesktopPlayerHost : PlayerHost {
         .map { it.toOutputFormat() }
         .stateIn(scope, SharingStarted.Eagerly, OutputFormatUi())
 
-    override val party: StateFlow<PartyUi> = DesktopListenTogether.state
-        .map {
-            PartyUi(
-                inParty = it.inParty,
-                controlsLocked = it.controlsLocked,
-                members = it.members,
-                you = it.you,
-                code = it.code,
-            )
-        }
-        .stateIn(scope, SharingStarted.Eagerly, PartyUi())
 
     override suspend fun translateLyrics(
         trackId: String,

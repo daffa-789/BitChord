@@ -29,16 +29,6 @@
     <string name="increase_lyrics_offset">Increase lyrics offset</string>
     <string name="instrumental">Instrumental</string>
     <string name="like">Suka</string>
-    <string name="listen_together">Dengar bersama</string>
-    <string name="listen_together_away">Sedang menjauh — tempatnya ditahan</string>
-    <string name="listen_together_host">Tuan rumah</string>
-    <string name="listen_together_in_party">Dalam pesta · %1$s</string>
-    <string name="listen_together_jam">Sesi %1$s</string>
-    <string name="listen_together_jam_unnamed">Mendengar bersama</string>
-    <string name="listen_together_manage">Kelola</string>
-    <string name="listen_together_open">Dengar bersama</string>
-    <string name="listen_together_open_count">Mendengar bersama · %1$d</string>
-    <string name="listen_together_you">Kamu</string>
     <string name="mixing">Mixing</string>
     <string name="lossless">Lossless</string>
     <string name="lyrics_already_in_language">Lirik ini sudah dalam %1$s</string>

@@ -87,11 +87,10 @@ internal val SCRIM_COLOR = Color.Black.copy(alpha = 0.5f)
 private const val DISMISS_DRAG_FRACTION = 0.25f
 
 /**
- * The bottom-edge drawer shell every player sheet in this package puts up —
- * [AudioOutputSheet] and [ListenTogetherMembersSheet] alike: dark over a
- * scrim, a grab handle, a title, drag down to put it away. Pulled out because
- * the drag gesture, the scrim fade tied to it, and the haze background are
- * identical between the two and worth keeping in exactly one place.
+ * The bottom-edge drawer shell every player sheet in this package puts up:
+ * dark over a scrim, a grab handle, a title, drag down to put it away. Pulled
+ * out because the drag gesture, the scrim fade tied to it, and the haze
+ * background are the same in each of them and worth keeping in one place.
  *
  * Public because a platform's own player sheet draws in it too: the phone's
  * lyrics card goes up in this same shell rather than in a second one that would

@@ -218,11 +218,7 @@ internal fun InlineQueue(
     queue: List<Song>,
     currentIndex: Int,
     autoplayEnabled: Boolean,
-    /**
-     * Read-only: the party's running order is the host's while this is set, so
-     * the queue is here to be looked at and scrolled, not worked.
-     */
-    controlsLocked: Boolean,
+
     onJumpTo: (Int) -> Unit,
     onRemove: (Int) -> Unit,
     onMove: (Int, Int) -> Unit,
@@ -307,7 +303,7 @@ internal fun InlineQueue(
                 modifier = Modifier.weight(1f),
             )
             if (tracks.user.isNotEmpty()) {
-                QueueClearButton(MaterialTheme.typography.titleMedium, controlsLocked, onClear)
+                QueueClearButton(MaterialTheme.typography.titleMedium, onClear)
             }
         }
         Spacer(Modifier.height(4.dp))
@@ -340,7 +336,6 @@ internal fun InlineQueue(
                             isCurrent = false,
                             onClick = { onJumpTo(track.timelineIndex) },
                             onRemove = { onRemove(track.timelineIndex) },
-                            locked = controlsLocked,
                             modifier = queueMotion(),
                         )
                     }
@@ -358,7 +353,6 @@ internal fun InlineQueue(
                             isCurrent = true,
                             onClick = { onJumpTo(nowPlaying.timelineIndex) },
                             onRemove = { onRemove(nowPlaying.timelineIndex) },
-                            locked = controlsLocked,
                             modifier = queueMotion(),
                         )
                     }
@@ -369,10 +363,10 @@ internal fun InlineQueue(
                             title = stringResource(Res.string.next_in_queue),
                             modifier = Modifier.padding(top = 16.dp, bottom = 6.dp).then(queueMotion()),
                         ) {
-                            QueueClearButton(MaterialTheme.typography.labelLarge, controlsLocked, onClear)
+                            QueueClearButton(MaterialTheme.typography.labelLarge, onClear)
                         }
                     }
-                    queueSection(tracks.user, QueueSection.USER, drag, controlsLocked, onJumpTo, onRemove)
+                    queueSection(tracks.user, QueueSection.USER, drag, onJumpTo, onRemove)
                 }
                 if (tracks.context.isNotEmpty()) {
                     item(key = "header-context") {
@@ -385,13 +379,13 @@ internal fun InlineQueue(
                             modifier = Modifier.padding(top = 16.dp, bottom = 6.dp).then(queueMotion()),
                         )
                     }
-                    queueSection(tracks.context, QueueSection.CONTEXT, drag, controlsLocked, onJumpTo, onRemove)
+                    queueSection(tracks.context, QueueSection.CONTEXT, drag, onJumpTo, onRemove)
                 }
                 if (autoplayEnabled || tracks.autoplay.isNotEmpty()) {
                     item(key = "autoplay-heading") {
                         AutoplayHeading(hasTracks = tracks.autoplay.isNotEmpty(), modifier = queueMotion())
                     }
-                    queueSection(tracks.autoplay, QueueSection.AUTOPLAY, drag, controlsLocked, onJumpTo, onRemove)
+                    queueSection(tracks.autoplay, QueueSection.AUTOPLAY, drag, onJumpTo, onRemove)
                 }
                 if (tracks.history.isNotEmpty() && nowPlaying != null) {
                     item(key = QUEUE_TAIL_KEY) {
@@ -434,7 +428,6 @@ private fun LazyListScope.queueSection(
     rows: List<QueueTrack>,
     section: QueueSection,
     drag: QueueDrag,
-    locked: Boolean,
     onJumpTo: (Int) -> Unit,
     onRemove: (Int) -> Unit,
 ) {
@@ -450,8 +443,7 @@ private fun LazyListScope.queueSection(
             isCurrent = false,
             onClick = { onJumpTo(track.timelineIndex) },
             onRemove = { onRemove(track.timelineIndex) },
-            locked = locked,
-            draggable = !locked,
+            draggable = true,
             onDragStart = { drag.start(track.key, section) },
             onDrag = drag::drag,
             onDragEnd = { drag.end(track.key) },
@@ -478,14 +470,14 @@ private fun QueueHeading(
 }
 
 @Composable
-private fun QueueClearButton(style: TextStyle, locked: Boolean, onClear: () -> Unit) {
+private fun QueueClearButton(style: TextStyle, onClear: () -> Unit) {
     Text(
         text = stringResource(Res.string.clear),
         style = style,
-        color = Color.White.copy(alpha = if (locked) 0.25f else 0.75f),
+        color = Color.White.copy(alpha = 0.75f),
         modifier = Modifier
             .clip(RoundedCornerShape(percent = 50))
-            .clickable(enabled = !locked, onClick = onClear)
+            .clickable(onClick = onClear)
             .padding(horizontal = 8.dp, vertical = 4.dp),
     )
 }
@@ -618,7 +610,7 @@ private class QueueDrag(private val listState: LazyListState) {
     var tracks = QueueTracks.EMPTY
     var onMove: (Int, Int) -> Unit = { _, _ -> }
 
-    /** See [PartySync.beginQueueDrag]: a jam hears about the reorder once, on drop. */
+    /** Called when a row starts and stops being dragged, so a reorder is reported once, on drop. */
     var onActiveChange: (Boolean) -> Unit = {}
 
     /** [QUEUE_EDGE_SCROLL_ZONE] and [QUEUE_EDGE_SCROLL_SPEED], in pixels. */

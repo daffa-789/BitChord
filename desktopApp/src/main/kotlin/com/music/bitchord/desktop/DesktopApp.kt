@@ -39,8 +39,6 @@ import com.music.bitchord.playback.PlaybackPosition
 import com.music.bitchord.playback.QueueSource
 import com.music.bitchord.playback.QueueTimeline
 import com.music.bitchord.playback.QueueTimeline.asQueueEntry
-import com.music.bitchord.data.listentogether.partyQueueIndexOf
-import com.music.bitchord.data.listentogether.partyUpcomingAfter
 import com.music.bitchord.ui.LyricsProviderState
 import com.music.bitchord.data.lyrics.LyricsSource
 import com.music.bitchord.ui.player.LyricsSidePanel
@@ -508,13 +506,7 @@ internal enum class DesktopRepeatMode {
 @Composable
 fun BitChordDesktopApp() {
     val scope = rememberCoroutineScope()
-    // Filled once the audio engine exists. Local playback helpers use this single hook so every
-    // transport and queue gesture reaches Listen Together without duplicating protocol logic.
-    val partySyncHolder = remember { arrayOfNulls<DesktopPartySync>(1) }
-    val partyState by DesktopListenTogether.state.collectAsState()
-    var personalQueueStash by remember { mutableStateOf<DesktopQueue?>(null) }
-    var personalPositionStash by remember { mutableStateOf(0L) }
-    var personalPlayingStash by remember { mutableStateOf(false) }
+
     val persistence = remember { DesktopPersistence() }
     // In-app update notifications disabled for BitChord Windows Edition
     var destination by remember { mutableStateOf(DesktopDestination.LISTEN_NOW) }
@@ -583,8 +575,6 @@ fun BitChordDesktopApp() {
     }
     // The order the queue was in before shuffle rearranged it, so the toggle can be undone.
     var preShuffleOrder by remember { mutableStateOf<List<String>>(emptyList()) }
-    // One party AutoPlay top-up at a time; see topUpPartyAutoplay.
-    val partyAutoplayLock = remember { Mutex() }
     val queue = liveQueue.songs
     // What was played on this computer. The account's own history replaces it
     // while signed in — see [remoteHistory] — because that is what Android's
@@ -795,10 +785,6 @@ fun BitChordDesktopApp() {
     lateinit var playbackEngine: DesktopPlaybackEngine
 
     fun saveQueue() {
-        // A party queue is temporary. The phone keeps the listener's own queue aside and so does
-        // desktop; never let a shared running order overwrite the queue restored after leaving or
-        // after a process restart.
-        if (DesktopListenTogether.state.value.inParty) return
         persistence.saveQueue(liveQueue.songs)
         persistence.saveString("queue_index", liveQueue.index.toString())
     }
@@ -811,41 +797,14 @@ fun BitChordDesktopApp() {
         saveQueue()
         persistence.saveHistory(history)
         playbackEngine.load(song, startPlaying)
-        partySyncHolder[0]?.onLocalIntent(song.videoId)
         scope.launch { DesktopScrobbling.updateNowPlaying(song) }
-    }
-
-    fun partyTrackChangeBlocked(): Boolean {
-        if (!DesktopListenTogether.state.value.controlsLocked) return false
-        DesktopPlayerHost.showMessage("Only the party host can change playback")
-        return true
-    }
-
-    /**
-     * The phone's party queue for a track picked here: that track, then what the party's members
-     * queued by hand. Never the album around it, and never the last track's AutoPlay — the party
-     * shares one running order, and the phone builds it exactly this way.
-     */
-    fun partyPlaybackQueue(tapped: Song): List<Song> {
-        val party = DesktopListenTogether.state.value
-        val upcoming = partyUpcomingAfter(party.queue, party.playback, party.playback.track?.videoId)
-        return QueueTimeline.buildPartyPlaybackQueue(
-            tapped,
-            tapped.queueSource(),
-            DesktopQueue.adopt(liveQueue.upcoming, upcoming.map { it.toDesktopSong() }),
-        )
     }
 
     /** A song played on its own — from a search row, a shelf card, history. */
     fun playSong(song: Song, startPlaying: Boolean = true, source: DesktopQueueSource? = null) {
-        if (partyTrackChangeBlocked()) return
         val tapped = canonicalSong(song).withSource(source)
-        val songs = if (DesktopListenTogether.state.value.inParty) {
-            partyPlaybackQueue(tapped)
-        } else {
-            // The phone's one-off queue: the song, then whatever the listener had queued by hand.
-            QueueTimeline.buildOneOffQueue(liveQueue.songs, liveQueue.index, tapped, tapped.queueSource())
-        }
+        // The phone's one-off queue: the song, then whatever the listener had queued by hand.
+        val songs = QueueTimeline.buildOneOffQueue(liveQueue.songs, liveQueue.index, tapped, tapped.queueSource())
         liveQueue = DesktopQueue(songs, index = 0)
         preShuffleOrder = emptyList()
         playCurrent(startPlaying)
@@ -909,16 +868,9 @@ fun BitChordDesktopApp() {
         // nothing to play: they stay out of the queue, and the pick moves to the next playable row.
         val resolved = songs.withIndex().filterNot { it.value.isUnresolvedSpotify }
         if (resolved.isEmpty()) return
-        if (partyTrackChangeBlocked()) return
         val playable = resolved.map { canonicalSong(it.value).withSource(source) }
         // Past the end still means the last row, as the clamp here always did.
         val at = resolved.indexOfFirst { it.index >= startIndex }.takeIf { it >= 0 } ?: resolved.lastIndex
-        if (DesktopListenTogether.state.value.inParty) {
-            liveQueue = DesktopQueue(partyPlaybackQueue(playable[at]), index = 0)
-            preShuffleOrder = emptyList()
-            playCurrent()
-            return
-        }
         // The phone's context queue: the album up to the pick, the pick, what the listener had
         // queued by hand, then the rest of the album.
         val built = QueueTimeline.buildContextQueue(
@@ -941,7 +893,6 @@ fun BitChordDesktopApp() {
     /** Moves within the queue, dropping whatever a forward jump passed over. */
     fun playQueueIndex(target: Int) {
         if (target !in liveQueue.songs.indices) return
-        if (partyTrackChangeBlocked()) return
         liveQueue = liveQueue.jumpTo(target)
         playCurrent()
     }
@@ -992,23 +943,13 @@ fun BitChordDesktopApp() {
 
     /**
      * Queues a track by hand, into the listener's own section — "Play next" at its head, "Add to
-     * queue" at its end, above the album and AutoPlay either way. In a party, held to the same
-     * twenty-five upcoming songs the phone and the server allow.
+     * queue" at its end, above the album and AutoPlay either way.
      */
     fun enqueue(song: Song, next: Boolean) {
-        val party = DesktopListenTogether.state.value
-        if (party.controlsLocked) return
-        if (party.inParty && liveQueue.upcoming.size >= DesktopPartySync.MAX_PARTY_UPCOMING_QUEUE) {
-            DesktopPlayerHost.showMessage(
-                "Queue is full (maximum ${DesktopPartySync.MAX_PARTY_UPCOMING_QUEUE} songs in party)",
-            )
-            return
-        }
         val queued = canonicalSong(song).copy(radioName = liveQueue.current?.radioName)
             .withSource(currentQueueSource())
         liveQueue = liveQueue.enqueue(queued, playNext = next)
         saveQueue()
-        partySyncHolder[0]?.onLocalIntent()
     }
 
     /** Slots a track in right after the one playing. */
@@ -1019,11 +960,9 @@ fun BitChordDesktopApp() {
 
     /** Starts the station YouTube Music builds around one track. */
     fun startRadio(song: Song) {
-        if (partyTrackChangeBlocked()) return
         val seed = canonicalSong(song).copy(radioName = song.title)
         scope.launch {
-            // AutoPlay's section behind the seed, as the phone queues a station — which is also
-            // what lets a party share it: a context tail is never published.
+            // AutoPlay's section behind the seed, as the phone queues a station.
             val related = DesktopAutoplay.tracksFor(listOf(seed), seed, INITIAL_RADIO_TRACKS)
                 .getOrNull()
                 .orEmpty()
@@ -1031,11 +970,9 @@ fun BitChordDesktopApp() {
                 DesktopTrackLog.log("radio: nothing to build a station on for '${song.title}'")
                 return@launch
             }
-            if (partyTrackChangeBlocked()) return@launch
             if (liveQueue.current?.videoId == seed.videoId) {
                 liveQueue = DesktopQueue(listOf(liveQueue.current!!) + related, index = 0)
                 saveQueue()
-                partySyncHolder[0]?.onLocalIntent()
             } else {
                 val station = listOf(seed.asQueueEntry(QueueTier.CONTEXT)) + related
                 liveQueue = if (shuffle) DesktopQueue.shuffledStartingAt(station, 0) else DesktopQueue(station, 0)
@@ -1182,59 +1119,13 @@ fun BitChordDesktopApp() {
 
     /** Keeps a station queued ahead of whatever is playing. */
 
-    /**
-     * How many AutoPlay tracks the party already has waiting after [videoId], or null outside a
-     * party or while its queue does not hold that track yet.
-     */
-    fun partyAutoplayWaiting(party: DesktopListenTogether.State, videoId: String): Int? {
-        if (!party.inParty) return null
-        if (partyQueueIndexOf(party.queue, party.playback, videoId) < 0) return null
-        return partyUpcomingAfter(party.queue, party.playback, videoId).count { it.fromAutoplay }
-    }
-
-    /**
-     * Sends [suggestions] to the party and waits for them to come back; the phone's
-     * `topUpPartyAutoplay`.
-     *
-     * Serialised, and the send-and-wait not cancellable, because a track change cancels the load in
-     * flight and starts another: the second used to read the party before the first batch had
-     * echoed, find nothing waiting, and send the same station again — every suggestion twice, on
-     * every device. Holding the lock until the echo means the next top-up reads a queue that
-     * already has these in it, and filters against it.
-     */
-    suspend fun topUpPartyAutoplay(currentId: String, suggestions: List<Song>): Boolean =
-        partyAutoplayLock.withLock {
-            withContext(NonCancellable) {
-                val party = DesktopListenTogether.state.value
-                val waiting = partyUpcomingAfter(party.queue, party.playback, currentId)
-                val waitingIds = waiting.mapTo(HashSet()) { it.videoId }
-                val room = MAX_QUEUED_AUTOPLAY - waiting.count { it.fromAutoplay }
-                val fresh = suggestions.filterNot { it.videoId in waitingIds }.take(room.coerceAtLeast(0))
-                if (fresh.isEmpty()) return@withContext true
-                DesktopListenTogether.queueAdd(fresh.map { it.toPartyTrack(0L) })
-                val added = fresh.first().videoId
-                withTimeoutOrNull(PARTY_AUTOPLAY_ECHO_TIMEOUT_MS) {
-                    DesktopListenTogether.state.first { state -> state.queue.items.any { it.videoId == added } }
-                } != null
-            }
-        }
-
     fun loadAutoplaySongs(playFirst: Boolean = false) {
         val current = selectedSong ?: return
-        val party = DesktopListenTogether.state.value
-        if (!DesktopAutoplay.enabled(party, autoplay) ||
-            repeatMode == DesktopRepeatMode.ALL ||
-            (party.inParty && DesktopAutoplay.supplierId(party) != party.you?.memberId)
-        ) return
+        if (!autoplay || repeatMode == DesktopRepeatMode.ALL) return
 
         if (dontRepeatSuggestions) sessionSongHistory += current
 
-        // In a party the server's queue is the one being topped up, and this computer's copy of it
-        // lags by however long reconcile is held off. Counted from the copy, a batch that had
-        // already landed read as missing and the same station went out again.
-        val queued = partyAutoplayWaiting(party, current.videoId)
-            ?: liveQueue.songs.drop(liveQueue.index + 1).count { it.fromAutoplay }
-        val needed = MAX_QUEUED_AUTOPLAY - queued
+        val needed = MAX_QUEUED_AUTOPLAY - liveQueue.songs.drop(liveQueue.index + 1).count { it.fromAutoplay }
         if (needed <= 0 && !playFirst) return
         // One request per seed.
         if (!playFirst && autoplaySeed == current.videoId) return
@@ -1247,15 +1138,12 @@ fun BitChordDesktopApp() {
             while (isActive) {
                 DesktopTrackLog.log("autoplay: building a station from '${current.title}'")
                 val at = liveQueue.songs.size
-                // What the queue holds — the party's too — plus everything this session has
-                // already offered.
-                val partyQueue = DesktopListenTogether.state.value
-                    .takeIf { it.inParty }?.queue?.items.orEmpty().map { it.toDesktopSong() }
+                // What the queue holds plus everything this session has already offered.
                 val suggestions = DesktopAutoplay.tracksFor(
                     existing = if (dontRepeatSuggestions) {
-                        liveQueue.songs + partyQueue + sessionSongHistory
+                        liveQueue.songs + sessionSongHistory
                     } else {
-                        liveQueue.songs + partyQueue
+                        liveQueue.songs
                     },
                     seedSong = current,
                     limit = remaining,
@@ -1265,11 +1153,7 @@ fun BitChordDesktopApp() {
                 }
                 // The listener may have moved on while the station was being fetched; appending
                 // then would attach it to the wrong seed.
-                val latestParty = DesktopListenTogether.state.value
-                if (selectedSong?.videoId != current.videoId ||
-                    !DesktopAutoplay.enabled(latestParty, autoplay) ||
-                    (latestParty.inParty && DesktopAutoplay.supplierId(latestParty) != latestParty.you?.memberId)
-                ) return@launch
+                if (selectedSong?.videoId != current.videoId) return@launch
                 if (suggestions.isEmpty()) {
                     DesktopTrackLog.log("autoplay: no station came back for '${current.title}'")
                     // Match the phone's bounded recovery: retry once after a short delay, but only
@@ -1286,23 +1170,11 @@ fun BitChordDesktopApp() {
                     DesktopQueueSource(it, current.playbackSourceType ?: PlaybackSourceType.QUEUE, current.playbackSourceId)
                 }
                 val queuedSuggestions = suggestions.map { it.withSource(inherited) }
-                if (latestParty.inParty) {
-                    // Match the phone: the server owns the party queue. Do not mutate this one
-                    // device first; queueAdd is echoed back and all members apply it atomically.
-                    val landed = topUpPartyAutoplay(current.videoId, queuedSuggestions)
-                    if (!landed) {
-                        autoplaySeed = null
-                        DesktopTrackLog.log("autoplay: party refused the queue top-up; retry is armed")
-                        return@launch
-                    }
-                    if (playFirst) DesktopListenTogether.next()
-                } else {
-                    liveQueue = liveQueue.append(queuedSuggestions)
-                    saveQueue()
-                    // The mix continues from where it was added rather than starting a queue of
-                    // its own.
-                    if (playFirst) playQueueIndex(at)
-                }
+                liveQueue = liveQueue.append(queuedSuggestions)
+                saveQueue()
+                // The mix continues from where it was added rather than starting a queue of
+                // its own.
+                if (playFirst) playQueueIndex(at)
                 if (dontRepeatSuggestions) sessionSongHistory += suggestions
                 DesktopTrackLog.log(
                     "autoplay: queued ${suggestions.size} after '${current.title}'",
@@ -1322,19 +1194,11 @@ fun BitChordDesktopApp() {
      * already playing rather than being refused as one this seed has been loaded for.
      */
     fun setAutoplay(enabled: Boolean) {
-        if (DesktopListenTogether.state.value.controlsLocked) return
         autoplay = enabled
         persistence.saveBoolean("autoplay", enabled)
         autoplayJob?.cancel()
         autoplayJob = null
         autoplaySeed = null
-        if (DesktopListenTogether.state.value.inParty) {
-            // As on the phone, the server owns the effective setting and queue while connected.
-            // Keep the personal preference for after leaving, but do not trim or top up this one
-            // device ahead of the server's state broadcast.
-            DesktopListenTogether.setAutoplay(enabled)
-            return
-        }
         if (enabled) {
             loadAutoplaySongs()
         } else {
@@ -1347,7 +1211,6 @@ fun BitChordDesktopApp() {
     }
 
     fun playNext() {
-        if (DesktopListenTogether.state.value.controlsLocked) return
         // Crossfade on skip: when enabled and the next deck is already prepared, blend into it over
         // a short crossfade instead of cutting. The blend's own hand-off advances the queue, so a
         // successful mix returns here without touching liveQueue; anything else falls through to the
@@ -1370,19 +1233,17 @@ fun BitChordDesktopApp() {
                 liveQueue = liveQueue.copy(index = 0)
                 playCurrent()
             }
-            DesktopAutoplay.enabled(DesktopListenTogether.state.value, autoplay) ->
+            autoplay ->
                 loadAutoplaySongs(playFirst = true)
         }
     }
 
     fun playPrevious() {
-        if (DesktopListenTogether.state.value.controlsLocked) return
         val positionMs = playbackEngine.state.value.positionMs
 
         // After 10 seconds, Previous restarts the current song.
         if (positionMs > BACK_RESTARTS_AFTER_MS) {
             playbackEngine.seekTo(0L)
-            partySyncHolder[0]?.onLocalIntent()
             return
         }
 
@@ -1397,7 +1258,6 @@ fun BitChordDesktopApp() {
      * the queue shows stays what plays.
      */
     fun setShuffle(enabled: Boolean) {
-        if (DesktopListenTogether.state.value.controlsLocked) return
         shuffle = enabled
         persistence.saveBoolean("shuffle", enabled)
         liveQueue = if (enabled) {
@@ -1407,7 +1267,6 @@ fun BitChordDesktopApp() {
             liveQueue.inOrderOf(preShuffleOrder).also { preShuffleOrder = emptyList() }
         }
         saveQueue()
-        partySyncHolder[0]?.onLocalIntent()
     }
 
     fun closePlaylistDialogs() {
@@ -1571,86 +1430,18 @@ fun BitChordDesktopApp() {
                     history = (listOf(song) + history.filterNot { it.videoId == song.videoId }).take(50)
                     persistence.saveHistory(history)
                     DesktopScrobbling.updateNowPlaying(song)
-                    partySyncHolder[0]?.onLocalIntent()
                 }
             },
         )
-    }
-    val partySync = remember(playbackEngine) {
-        DesktopPartySync(
-            scope = scope,
-            engine = playbackEngine,
-            playTrack = { shared, at ->
-                // The phone's PartySync.load: the party's running order, standing on its track —
-                // so the queue on screen moves with the song rather than keeping the old one as
-                // "now playing" and the new one as the first thing still to come.
-                val songs = DesktopQueue.adopt(liveQueue.songs, shared.map { it.toDesktopSong() })
-                liveQueue = DesktopQueue(songs, at.coerceIn(songs.indices)).trimmed()
-                liveQueue.current?.let { song ->
-                    selectedSong = song
-                    playbackEngine.load(song, playWhenReady = false)
-                }
-            },
-            localQueue = { liveQueue.songs to liveQueue.index },
-            applyPartyUpcoming = { upcoming ->
-                val aligned = liveQueue.withPartyUpcoming(upcoming.map { it.toDesktopSong() })
-                if (aligned !== liveQueue) liveQueue = aligned
-            },
-            applyPartyAutoplay = { _ ->
-                // The party setting overrides the personal preference only while connected. The
-                // phone deliberately does not persist it or delete queue rows on this device.
-                autoplayJob?.cancel()
-                autoplayJob = null
-                autoplaySeed = null
-            },
-            onEnteredParty = {
-                if (personalQueueStash == null) {
-                    personalQueueStash = liveQueue
-                    personalPositionStash = playbackEngine.state.value.positionMs
-                    personalPlayingStash = playbackEngine.state.value.isPlaying
-                }
-            },
-            onLeftParty = {
-                personalQueueStash?.let { stashed ->
-                    liveQueue = stashed
-                    selectedSong = stashed.current
-                    stashed.current?.let {
-                        playbackEngine.load(it, personalPlayingStash, personalPositionStash)
-                    }
-                    saveQueue()
-                }
-                personalQueueStash = null
-            },
-        )
-    }
-    DisposableEffect(partySync) {
-        partySyncHolder[0] = partySync
-        partySync.start()
-        onDispose {
-            partySync.stop()
-            if (partySyncHolder[0] === partySync) partySyncHolder[0] = null
-        }
     }
     fun togglePlayPauseFromUser() {
-        if (partySync.handleLockedPlayPause()) return
         playbackEngine.togglePlayPause()
-        partySync.onLocalIntent()
     }
     fun playFromUser() {
-        if (DesktopListenTogether.state.value.controlsLocked) {
-            if (!playbackEngine.state.value.isPlaying) partySync.handleLockedPlayPause()
-            return
-        }
         playbackEngine.play()
-        partySync.onLocalIntent()
     }
     fun pauseFromUser() {
-        if (DesktopListenTogether.state.value.controlsLocked) {
-            if (playbackEngine.state.value.isPlaying) partySync.handleLockedPlayPause()
-            return
-        }
         playbackEngine.pause()
-        partySync.onLocalIntent()
     }
     val mprisController = remember(playbackEngine) {
         DesktopMprisController(
@@ -1680,10 +1471,7 @@ fun BitChordDesktopApp() {
                 persistence.saveString("volume", volume.toString())
             },
             onSeek = { positionMs ->
-                if (!DesktopListenTogether.state.value.controlsLocked) {
-                    playbackEngine.seekTo(positionMs)
-                    partySync.onLocalIntent()
-                }
+                playbackEngine.seekTo(positionMs)
             },
         )
     }
@@ -1702,10 +1490,7 @@ fun BitChordDesktopApp() {
                 onPrevious = ::playPrevious,
                 onStop = ::pauseFromUser,
                 onSeek = { positionMs ->
-                    if (!DesktopListenTogether.state.value.controlsLocked) {
-                        playbackEngine.seekTo(positionMs)
-                        partySync.onLocalIntent()
-                    }
+                    playbackEngine.seekTo(positionMs)
                 },
             ),
         )
@@ -1733,15 +1518,9 @@ fun BitChordDesktopApp() {
         playbackEngine.setSkipSilence(skipSilence)
         playbackEngine.setOutputPrecision(outputPrecision)
     }
-    // Not while listening together, exactly as on the phone: a blend starts the next track early,
-    // by a length this computer decides from its own copy of the audio, so every member would begin
-    // the next song at a different moment and be dragged back by a correcting seek. The transition a
-    // party shares is the plain one. The settings themselves are left alone and come back after.
-    val inParty = partyState.inParty
-    LaunchedEffect(crossfadeOnSkip, crossfadeSeconds, inParty, audioQuality, selectedSong?.videoId, queue, liveQueue.index, shuffle, repeatMode) {
-        playbackEngine.setCrossfadeSeconds(if (inParty) 0 else crossfadeSeconds)
-        // A party mixes only with the plain transition, so a skip there cuts like it always did.
-        playbackEngine.setSkipMixEnabled(crossfadeOnSkip && !inParty)
+    LaunchedEffect(crossfadeOnSkip, crossfadeSeconds, audioQuality, selectedSong?.videoId, queue, liveQueue.index, shuffle, repeatMode) {
+        playbackEngine.setCrossfadeSeconds(crossfadeSeconds)
+        playbackEngine.setSkipMixEnabled(crossfadeOnSkip)
         // Exactly what Next would play, so a crossfade can never blend into anything else. Shuffle
         // is already the queue's order; picking "the first track that is not this one" under it
         // blended into a song from history whenever the current one was not at the top.
@@ -1757,26 +1536,10 @@ fun BitChordDesktopApp() {
     LaunchedEffect(selectedSong?.videoId, autoplay, repeatMode) {
         loadAutoplaySongs()
     }
-    val partyAutoplaySupplier = DesktopAutoplay.supplierId(partyState)
-    LaunchedEffect(
-        partyState.code,
-        partyState.playback.autoplayEnabled,
-        partyAutoplaySupplier,
-    ) {
-        if (partyState.inParty &&
-            partyState.playback.autoplayEnabled &&
-            partyAutoplaySupplier == partyState.you?.memberId
-        ) {
-            autoplayJob?.cancel()
-            autoplayJob = null
-            autoplaySeed = null
-            loadAutoplaySongs()
-        }
-    }
-    LaunchedEffect(liveQueue.songs.size, liveQueue.index, partyState.queue.seq) {
+    LaunchedEffect(liveQueue.songs.size, liveQueue.index) {
         val currentId = selectedSong?.videoId
         val shouldRefresh = DesktopAutoplay.queueNeedsRefresh(
-            enabled = DesktopAutoplay.enabled(partyState, autoplay),
+            enabled = autoplay,
             repeatAll = repeatMode == DesktopRepeatMode.ALL,
             currentIndex = liveQueue.index,
             itemCount = liveQueue.songs.size,
@@ -3099,43 +2862,35 @@ fun BitChordDesktopApp() {
 
     // The queue's edits, for the player's queue and the queue column alike.
     fun removeFromQueue(at: Int) {
-        if (DesktopListenTogether.state.value.controlsLocked) return
         val edited = liveQueue.removeAt(at)
         if (edited !== liveQueue) {
             liveQueue = edited
             saveQueue()
-            partySyncHolder[0]?.onLocalIntent()
         }
     }
 
     fun moveInQueue(from: Int, to: Int) {
-        if (DesktopListenTogether.state.value.controlsLocked) return
         val edited = liveQueue.move(from, to)
         if (edited !== liveQueue) {
             liveQueue = edited
             saveQueue()
-            partySyncHolder[0]?.onLocalIntent()
         }
     }
 
     // Clears what the listener queued by hand, as the phone's Clear does; the album and AutoPlay
     // stay where they are.
     fun clearQueue() {
-        if (DesktopListenTogether.state.value.controlsLocked) return
         val edited = liveQueue.withoutUserQueue()
         if (edited === liveQueue) return
         liveQueue = edited
         saveQueue()
-        partySyncHolder[0]?.onLocalIntent()
     }
 
     fun seekPlayer(target: Long) {
-        if (DesktopListenTogether.state.value.controlsLocked) return
         val duration = playback.durationMs
         playbackEngine.seekTo(
             if (duration > 0) target.coerceIn(0L, duration) else target.coerceAtLeast(0L),
         )
-        partySyncHolder[0]?.onLocalIntent()
     }
 
     MaterialTheme(
@@ -3332,7 +3087,7 @@ fun BitChordDesktopApp() {
                             DesktopSidePanel.QUEUE -> QueueSidePanel(
                                 queue = liveQueue.songs,
                                 queueIndex = liveQueue.index,
-                                autoplayEnabled = DesktopAutoplay.enabled(partyState, autoplay),
+                                autoplayEnabled = autoplay,
                                 onJumpTo = ::playQueueIndex,
                                 onRemove = ::removeFromQueue,
                                 onMove = ::moveInQueue,
@@ -3383,7 +3138,7 @@ fun BitChordDesktopApp() {
                                 DesktopRepeatMode.ALL -> RepeatModes.ALL
                             },
                             shuffleEnabled = shuffle,
-                            autoplayEnabled = DesktopAutoplay.enabled(partyState, autoplay),
+                            autoplayEnabled = autoplay,
                             signedIn = youtubeSignedIn,
                             accountName = activeAccount?.profiles?.firstOrNull { it.profileId == activeProfileId }?.name?.takeIf(String::isNotBlank)
                                 ?: activeAccount?.name?.takeIf(String::isNotBlank),
@@ -3396,9 +3151,7 @@ fun BitChordDesktopApp() {
                             onPlayPause = ::togglePlayPauseFromUser,
                             onNext = ::playNext,
                             onPrevious = ::playPrevious,
-                            onBlockedControl = {
-                                DesktopPlayerHost.showMessage("Only the party host can change playback")
-                            },
+
                             onSeek = ::seekPlayer,
                             onSeekFraction = { fraction ->
                                 val duration = playbackEngine.state.value.durationMs
@@ -3415,7 +3168,7 @@ fun BitChordDesktopApp() {
                                 persistence.saveString("repeat_mode", repeatMode.name)
                             },
                             onToggleAutoplay = {
-                                setAutoplay(!DesktopAutoplay.enabled(DesktopListenTogether.state.value, autoplay))
+                                setAutoplay(!autoplay)
                             },
                             onJumpTo = ::playQueueIndex,
                             onRemoveFromQueue = ::removeFromQueue,
@@ -3450,10 +3203,7 @@ fun BitChordDesktopApp() {
                                     openAlbum(id)
                                 }
                             },
-                            onListenTogether = {
-                                overlays.nowPlaying = false
-                                overlays.listenTogether = true
-                            },
+
                             lyrics = sharedLyrics,
                             lyricsSource = sharedLyricsSource,
                             lyricsProviderStates = providerStates,
@@ -3720,12 +3470,7 @@ fun BitChordDesktopApp() {
                     if (overlays.discordToken) {
                         DesktopDiscordTokenDialog(onDismiss = { overlays.discordToken = false })
                     }
-                    if (overlays.listenTogether) {
-                        DesktopListenTogetherDialog(
-                            autoplayEnabled = autoplay,
-                            onDismiss = { overlays.listenTogether = false },
-                        )
-                    }
+
                     if (overlays.audioOutput) {
                         DesktopAudioOutputDialog(onDismiss = { overlays.audioOutput = false })
                     }
@@ -3855,7 +3600,6 @@ fun BitChordDesktopApp() {
                                     onOpenTranslationLanguage = { overlays.settingsPage = DesktopSettingsPage.TRANSLATION_LANGUAGE },
                                     onOpenEqualizer = { overlays.settingsPage = DesktopSettingsPage.EQUALIZER },
                                     onOpenAudioOutput = { overlays.settingsPage = DesktopSettingsPage.AUDIO_OUTPUT },
-                                    onOpenListenTogether = { overlays.settingsPage = DesktopSettingsPage.LISTEN_TOGETHER },
                                     onShowNerdStatsChange = {
                                         showNerdStats = it
                                         persistence.saveBoolean("show_nerd_stats", it)
@@ -3968,10 +3712,7 @@ fun BitChordDesktopApp() {
                                 )
                                 DesktopSettingsPage.EQUALIZER -> DesktopEqualizerDialog(onDismiss = ::goBack)
                                 DesktopSettingsPage.AUDIO_OUTPUT -> DesktopAudioOutputDialog(onDismiss = ::goBack)
-                                DesktopSettingsPage.LISTEN_TOGETHER -> DesktopListenTogetherDialog(
-                                    autoplayEnabled = autoplay,
-                                    onDismiss = ::goBack,
-                                )
+
                                 DesktopSettingsPage.LYRICS_SOURCES -> DesktopLyricsSourcesDialog(
                                     order = lyricsOrder,
                                     enabled = lyricsOn,
@@ -5754,7 +5495,6 @@ private fun DesktopLibraryGroupingContent(
 /** Mobile's section order, with desktop-only groups placed beside their closest mobile counterpart. */
 private enum class DesktopSettingsSection {
     ACCOUNT,
-    LISTEN_TOGETHER,
     SOURCES,
     AUDIO_QUALITY,
     DOWNLOADS,
@@ -5816,8 +5556,7 @@ private fun DesktopSettingsScreen(
     onOpenEqualizer: () -> Unit,
     /** Opens the output-device picker. */
     onOpenAudioOutput: () -> Unit,
-    /** Opens the listening-together party. */
-    onOpenListenTogether: () -> Unit,
+
     showNerdStats: Boolean,
     onShowNerdStatsChange: (Boolean) -> Unit,
     fullBleedArtwork: Boolean,
@@ -6324,14 +6063,7 @@ private fun DesktopSettingsScreen(
                     }
                 }
             }
-            if (section == DesktopSettingsSection.LISTEN_TOGETHER) item {
-                SettingsGroup(DesktopStrings["listen_together", "Listen together"]) {
-                    SettingsNavigationRow(
-                        DesktopStrings["listen_together", "Listen together"],
-                        DesktopStrings["listen_together_create_subtitle", "Start a party and share the code."],
-                    ) { onOpenListenTogether() }
-                }
-            }
+
             if (section == DesktopSettingsSection.AUDIO_OUTPUT) item {
                 SettingsGroup(DesktopStrings["audio_output", "Audio output"]) {
                     SettingsNavigationRow(

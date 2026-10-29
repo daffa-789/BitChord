@@ -138,16 +138,6 @@ internal data class DesktopQueue(
      * groups the same on every device. Returns this same object when nothing differs, so a
      * reconcile tick that changes nothing redraws nothing.
      */
-    fun withPartyUpcoming(desired: List<Song>): DesktopQueue {
-        if (index !in songs.indices) return this
-        val local = upcoming
-        if (local.size == desired.size &&
-            local.indices.all { local[it].videoId == desired[it].videoId && local[it].queueTier == desired[it].queueTier }
-        ) {
-            return this
-        }
-        return copy(songs = songs.take(index + 1) + adopt(local, desired))
-    }
 
     /**
      * Drops played hand-queued rows once playback is back in the album — the phone's
@@ -224,17 +214,6 @@ internal data class DesktopQueue(
         fun shuffledStartingAt(songs: List<Song>, startIndex: Int): DesktopQueue {
             if (songs.isEmpty()) return DesktopQueue()
             return DesktopQueue(QueueTimeline.shuffledStartingOrder(songs, startIndex))
-        }
-
-        /**
-         * [wanted], reusing the rows of [local] that are the same tracks — they carry metadata the
-         * party's slimmer copy lacks — but in [wanted]'s sections. Each local row is used at most
-         * once, so a track queued twice stays two rows with two identities.
-         */
-        fun adopt(local: List<Song>, wanted: List<Song>): List<Song> {
-            val known = HashMap<String, ArrayDeque<Song>>()
-            local.forEach { known.getOrPut(it.videoId) { ArrayDeque() }.addLast(it) }
-            return wanted.map { w -> known[w.videoId]?.removeFirstOrNull()?.copy(queueTier = w.queueTier) ?: w }
         }
 
         /** One song played on its own is a queue of one, not an addition to the last one. */

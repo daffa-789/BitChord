@@ -195,9 +195,20 @@ tidak ada fitur yang memang tidak pernah bisa aktif di mesin ini. Yang dibuang b
 - [ ] **Modul JS (GraalVM)** — `polyglot` + `js-language` + `truffle` + ICU bawaan ≈ **61 MB**, hanya dipakai
   host plugin yang tidak punya UI instal; indeks modul upstream sudah 404 dan preferensi
   `MODULE_INDEX_URL` tidak pernah dibaca kode.
-- [ ] **Kode macOS & Linux** — `DesktopMacFrame`, MPRIS/StatusNotifier Linux, libsecret, pemantau audio
-  ALSA, dependensi `dbus-java`, dan semua cabang target selain Windows di skrip Gradle.
-- [ ] **Listen Together / PartySync / QR + telemetri Presence** — butuh server pihak ketiga yang tidak
-  pernah diisi; `Presence` mengirim ping "aplikasi terbuka" ke server upstream tiap ~5 menit.
-- [ ] **Sumber JioSaavn** — ikut *balapan* resolusi di setiap lagu sehingga memperlambat suara pertama.
+- [x] **Listen Together / PartySync / QR** — butuh server pihak ketiga yang tidak pernah diisi
+  (tombolnya tetap muncul, tapi gagal dengan "Set the party server address first"). Yang dibuang:
+  mesin party (`DesktopListenTogether`, `DesktopPartySync`, dialog + UI-nya, QR undangan dan `zxing`),
+  kontrak `party` di host pemutar, pil "party" di kapsul output, lembar daftar anggota, kunci-kunci
+  `listen_together_*` (37 baris katalog), serta penjagaan `controlsLocked` di transport, antrean,
+  seek, MPRIS dan kartu media Windows. AutoPlay kini hanya mengikuti preferensi lokal — tidak ada
+  lagi pemilihan "supplier" dan penitipan antrean pribadi.
+- [x] **Telemetri Presence** — ping "aplikasi terbuka" ke server upstream tiap ~5 menit, tanpa
+  cara mematikannya dari Settings.
+- [ ] **Kode macOS** — `DesktopMacFrame` (550 baris, JNA) dan cabang `macos` di skrip Gradle: build
+  ini menargetkan Windows dan Linux, jadi bingkai Mac tidak pernah dipakai. Belum disentuh.
+- [x] **Kode Linux dipertahankan** — MPRIS, StatusNotifier, `dbus-java` dan pemantau audio ALSA
+  sengaja TIDAK dihapus: target repo ini Windows + Linux, dan job `desktop-linux` di CI menjaganya
+  tetap terkompilasi.
+- [ ] **Sumber JioSaavn dipertahankan** — sempat masuk daftar buang karena ikut balapan resolusi di
+  setiap lagu; ditahan karena ia sumber lossy 320kbps yang benar-benar dipakai.
 
