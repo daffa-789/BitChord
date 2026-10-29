@@ -374,11 +374,10 @@ tasks.named<ProcessResources>("processResources") {
         include("*.dll")
         into("native")
     }
-    // The Automix models, taken from the Android module rather than copied into this one.
-    from(project.file("src/main/resources/models")) {
-        include("*.onnx")
-        into("models")
-    }
+    // The Automix models already live in `src/main/resources/models`, which this task copies as
+    // part of the source set. An extra `from` of that same folder made Gradle fail the copy with
+    // "Entry models/… is a duplicate but no duplicate handling strategy has been set", which is
+    // what stopped `:desktopApp:run` from starting the app at all.
 }
 
 // Kotlin 2.4 no longer contributes this JVM target's compiler output to Gradle's plain `jar`

@@ -88,6 +88,11 @@ internal data class DesktopSongActions(
     val onStartRadio: (Song) -> Unit,
     val onPlayNext: (Song) -> Unit,
     val onAddToQueue: (Song) -> Unit,
+    /**
+     * Puts the song on screen in the Dynamic Island capsule: switches the island on, and starts
+     * the track when it is not the one already playing.
+     */
+    val onPlayInIsland: (Song) -> Unit,
     val onOpenAlbum: (String) -> Unit,
     val onOpenArtist: (String) -> Unit,
     val onSleepTimer: (Int?) -> Unit,
@@ -217,6 +222,7 @@ internal fun DesktopSongMenuFor(
         onStartRadio = { actions.onStartRadio(song); close() },
         onPlayNext = { actions.onPlayNext(song); close() },
         onAddToQueue = { actions.onAddToQueue(song); close() },
+        onPlayInIsland = { actions.onPlayInIsland(song); close() },
         onOpenAlbum = { id -> actions.onOpenAlbum(id); close() },
         onOpenArtist = { id -> actions.onOpenArtist(id); close() },
         onSleepTimer = { actions.onSleepTimer(it); close() },
@@ -261,6 +267,8 @@ internal fun DesktopSongMenu(
     onStartRadio: () -> Unit,
     onPlayNext: () -> Unit,
     onAddToQueue: () -> Unit,
+    /** Switches the Dynamic Island on for this track; null hides the row. */
+    onPlayInIsland: (() -> Unit)? = null,
     onOpenAlbum: ((String) -> Unit)?,
     onOpenArtist: ((String) -> Unit)?,
     onSleepTimer: (Int?) -> Unit,
@@ -416,6 +424,16 @@ internal fun DesktopSongMenu(
         DesktopMenuRow(Icons.Rounded.Radio, DesktopStrings["start_radio", "Start radio"], onClick = onStartRadio)
         DesktopMenuRow(Icons.AutoMirrored.Rounded.PlaylistPlay, DesktopStrings["play_next", "Play next"], onClick = onPlayNext)
         DesktopMenuRow(Icons.AutoMirrored.Rounded.QueueMusic, DesktopStrings["add_to_queue", "Add to queue"], onClick = onAddToQueue)
+        // The island is where a desktop user watches the song while working elsewhere, so the way
+        // into it belongs on the track itself, not only on the island that is not yet on screen.
+        onPlayInIsland?.let {
+            DesktopMenuRow(
+                icon = BitChordIcons.MusicNote,
+                label = DesktopStrings["d_island_play_in", "Play in Dynamic Island"],
+                tint = DesktopAccent,
+                onClick = it,
+            )
+        }
         // What the player's content column shows, and the ways of reading the
         // lyrics: one row switches the column between the sheet and the queue,
         // named for whichever is not on screen; the translation the overflow used

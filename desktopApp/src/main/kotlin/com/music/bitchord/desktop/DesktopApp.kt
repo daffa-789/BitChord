@@ -6,6 +6,7 @@ import com.music.bitchord.ui.components.ShelfRowChrome
 import com.music.bitchord.ui.components.ShelfRow
 import androidx.compose.material.icons.automirrored.rounded.ArrowBack
 import androidx.compose.ui.input.key.isAltPressed
+import androidx.compose.ui.input.key.isCtrlPressed
 import androidx.compose.ui.input.key.isMetaPressed
 import androidx.compose.ui.input.pointer.isBackPressed
 import androidx.compose.ui.input.pointer.isSecondaryPressed
@@ -2060,6 +2061,19 @@ fun BitChordDesktopApp() {
     }
 
     /**
+     * Puts [song] on the Dynamic Island: the capsule is switched on, and the track starts when it
+     * is not the one already loaded — the menu row reads "Play", so it should play.
+     */
+    fun playInDynamicIsland(song: Song) {
+        DesktopDynamicIslandSettings.setEnabled(true)
+        if (selectedSong?.videoId == song.videoId) {
+            if (!playback.isPlaying) playFromUser()
+        } else {
+            playSong(song)
+        }
+    }
+
+    /**
      * The "…" menu for one row, wherever it is drawn.
      *
      * Built once so a row on Downloads or Local Music offers what the player's own "…" offers —
@@ -2079,6 +2093,7 @@ fun BitChordDesktopApp() {
         onStartRadio = ::startRadio,
         onPlayNext = ::playNext,
         onAddToQueue = ::addToQueue,
+        onPlayInIsland = ::playInDynamicIsland,
         onOpenAlbum = ::openAlbum,
         onOpenArtist = { id -> openArtist(id, song.artist) },
         onSleepTimer = { minutes ->
@@ -2975,6 +2990,7 @@ fun BitChordDesktopApp() {
         onStartRadio = ::startRadio,
         onPlayNext = ::playNext,
         onAddToQueue = ::addToQueue,
+        onPlayInIsland = ::playInDynamicIsland,
         // Both leave the player, the way opening a page from Android's sheet collapses it.
         onOpenAlbum = { id ->
             overlays.nowPlaying = false
@@ -3010,6 +3026,11 @@ fun BitChordDesktopApp() {
             volume = it
             persistence.saveString("volume", it.toString())
         }
+        // The island's own menus reach the app through here, so a right-click on the capsule can
+        // open the player or Settings exactly as the toolbar's buttons do.
+        DesktopFloatingLyricsManager.onOpenNowPlaying = { overlays.nowPlaying = selectedSong != null }
+        DesktopFloatingLyricsManager.onOpenSettings = { openSettings() }
+        DesktopFloatingLyricsManager.onOpenLyrics = { overlays.toggleSidePanel(DesktopSidePanel.LYRICS) }
     }
 
     // The engine's measured stream, as the player's quality badge and stats line read it.
@@ -3054,6 +3075,8 @@ fun BitChordDesktopApp() {
     LaunchedEffect(playbackEngine) {
         playbackEngine.state.collect {
             DesktopFloatingLyricsManager.currentPositionMs.value = it.positionMs
+            // The island's progress hairline is the song's own progress, not the lyric's.
+            DesktopFloatingLyricsManager.durationMs.value = it.durationMs
         }
     }
     val sharedLyricsSource = remember(lyrics) { lyrics?.source?.let(::lyricsSourceNamed) }
@@ -3178,6 +3201,12 @@ fun BitChordDesktopApp() {
                         }
                         event.key == Key.F11 -> {
                             DesktopWindowMode.toggle()
+                            true
+                        }
+                        // Windows' own shortcut for the island, so it is reachable without the
+                        // mouse while the user is working in something else.
+                        event.isCtrlPressed && event.isAltPressed && event.key == Key.D -> {
+                            DesktopFloatingLyricsManager.toggle()
                             true
                         }
                         event.key == Key.DirectionLeft && event.isAltPressed && !overlays.nowPlaying -> {
@@ -3557,7 +3586,8 @@ fun BitChordDesktopApp() {
                             )
                         }
                     }
-                    DesktopInAppFloatingDynamicIsland()
+                    // The floating capsule is a window of its own now — see DesktopIslandWindow —
+                    // so that hiding this window leaves it on screen.
 
                     if (overlays.accounts) {
                         DesktopAccountSelector(
@@ -4524,7 +4554,7 @@ private fun DesktopTopBar(
                     ) {
                         DesktopTopBarDynamicIsland(
                             song = song,
-                            currentProgress = currentProgress,
+                            currentProgress = { currentProgress },
                             
                             onOpenNowPlaying = onOpenNowPlaying,
                         )
@@ -4560,15 +4590,7 @@ private fun DesktopTopBar(
                             modifier = Modifier.size(19.dp),
                         )
                     }
-                                        val isFloatingLyricsOn by DesktopFloatingLyricsManager.isEnabled.collectAsState()
-                    DesktopToolbarButton(onClick = { DesktopFloatingLyricsManager.toggle() }, size = 32.dp) {
-                        Icon(
-                            BitChordIcons.MusicNote,
-                            "Floating Lyrics Overlay",
-                            tint = if (isFloatingLyricsOn) DesktopAccent else DesktopSecondary,
-                            modifier = Modifier.size(19.dp),
-                        )
-                    }
+                    DesktopIslandToolbarButton()
                     DesktopToolbarButton(onClick = onOpenLyrics, size = 32.dp) {
                         Icon(
                             BitChordIcons.LyricsQuote,
@@ -5795,6 +5817,7 @@ private enum class DesktopSettingsSection {
     PLAYBACK,
     DESKTOP_PLAYBACK,
     APPEARANCE,
+    DYNAMIC_ISLAND,
     LYRICS,
     LOCAL_MUSIC,
     STORAGE,
@@ -6362,6 +6385,11 @@ private fun DesktopSettingsScreen(
                             onClick = onOpenSpotifyCanvasSetup,
                         )
                     }
+                }
+            }
+            if (section == DesktopSettingsSection.DYNAMIC_ISLAND) item {
+                SettingsGroup(DesktopStrings["d_dynamic_island", "Dynamic Island"]) {
+                    DynamicIslandSettingsGroup()
                 }
             }
             if (section == DesktopSettingsSection.MISCELLANEOUS) item {
@@ -7858,7 +7886,7 @@ private val LocalSettingsMatches = compositionLocalOf<MutableList<String>?> { nu
  * Rows call this first and return early when it is false.
  */
 @Composable
-private fun settingsRowVisible(title: String, subtitle: String = ""): Boolean {
+internal fun settingsRowVisible(title: String, subtitle: String = ""): Boolean {
     val query = LocalSettingsQuery.current
     if (query.isBlank()) return true
     val hit = title.contains(query, ignoreCase = true) || subtitle.contains(query, ignoreCase = true)
@@ -7872,7 +7900,7 @@ private fun settingsRowVisible(title: String, subtitle: String = ""): Boolean {
 
 /** A settings row that opens something rather than toggling it. */
 @Composable
-private fun SettingsNavigationRow(title: String, subtitle: String, onClick: () -> Unit) {
+internal fun SettingsNavigationRow(title: String, subtitle: String, onClick: () -> Unit) {
     if (!settingsRowVisible(title, subtitle)) return
     Row(
         Modifier
@@ -7938,7 +7966,7 @@ internal fun DesktopBareSlider(
 }
 
 @Composable
-private fun SettingsToggle(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+internal fun SettingsToggle(title: String, subtitle: String, checked: Boolean, onCheckedChange: (Boolean) -> Unit) {
     if (!settingsRowVisible(title, subtitle)) return
     Row(
         Modifier

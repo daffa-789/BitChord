@@ -128,17 +128,28 @@ class DesktopReplayTest {
 
     @Test
     fun `the cards lead with minutes and skip a category with nothing in it`() {
-        val summary = DesktopListeningStats.summarise(history, DesktopReplayPeriod.ALL_TIME, today)
-        val cards = summary.heroCards()
-        assertEquals("Minutes listened", cards.first().label)
-        assertEquals(listOf("Minutes listened", "Top artist", "Top song", "Top album"), cards.map { it.label })
+        // The labels come from the catalogue, so the assertion is pinned to a language rather than
+        // to whatever the machine running the tests happens to be set to.
+        val before = DesktopStrings.language.value
+        try {
+            DesktopStrings.setLanguage("en")
+            val summary = DesktopListeningStats.summarise(history, DesktopReplayPeriod.ALL_TIME, today)
+            val cards = summary.heroCards()
+            assertEquals("Minutes listened", cards.first().label)
+            assertEquals(
+                listOf("Minutes listened", "Top artist", "Top song", "Top album"),
+                cards.map { it.label },
+            )
 
-        val bare = DesktopListeningStats.summarise(
-            listOf(bucket("2026-09", Triple(song("n", "No Album", "Nobody"), 60_000L, 1))),
-            DesktopReplayPeriod.ALL_TIME,
-            today,
-        )
-        assertTrue(bare.heroCards().none { it.label == "Top album" } || bare.albums.isNotEmpty())
+            val bare = DesktopListeningStats.summarise(
+                listOf(bucket("2026-09", Triple(song("n", "No Album", "Nobody"), 60_000L, 1))),
+                DesktopReplayPeriod.ALL_TIME,
+                today,
+            )
+            assertTrue(bare.heroCards().none { it.label == "Top album" } || bare.albums.isNotEmpty())
+        } finally {
+            DesktopStrings.setLanguage(before)
+        }
     }
 
     @Test

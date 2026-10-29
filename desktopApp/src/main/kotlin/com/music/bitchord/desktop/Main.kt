@@ -70,7 +70,8 @@ private fun desktopMain() = application {
     // Closing puts the window away rather than ending the process, while there is a tray icon to
     // bring it back from — see [DesktopWindowVisibility].
     val visible by DesktopWindowVisibility.visible.collectAsState()
-    val state = rememberWindowState(width = 1_220.dp, height = 780.dp)
+    val opening = remember { openingWindowSize() }
+    val state = rememberWindowState(width = opening.width, height = opening.height)
     LaunchedEffect(visible) {
         if (visible && state.isMinimized) {
             state.isMinimized = false
@@ -183,7 +184,41 @@ private fun desktopMain() = application {
             BitChordDesktopApp()
         }
     }
+    // The capsule lives in a window of its own, so hiding the window above leaves it on screen.
+    DesktopIslandWindow()
 }
 
 private const val MIN_WINDOW_WIDTH_DP = 900.0
 private const val MIN_WINDOW_HEIGHT_DP = 600.0
+
+/** The size the window opens at on a roomy display. */
+private const val DEFAULT_WINDOW_WIDTH_DP = 1_220f
+private const val DEFAULT_WINDOW_HEIGHT_DP = 780f
+
+/**
+ * The opening size, held inside whatever screen is actually there.
+ *
+ * Compose sizes a window in dp, so the 1220×780 above asks for 1525×975 device pixels at Windows'
+ * 125% scaling and 1906×1219 at 156% — taller than a 1080p screen. The window then opened with its
+ * bottom, and with the Settings row pinned to it, off the screen entirely, which reads as a
+ * missing feature rather than as a window that is too big. The screen's work area decides instead,
+ * and the default only wins when there is room for it.
+ */
+private fun openingWindowSize(): androidx.compose.ui.unit.DpSize {
+    val fallback = androidx.compose.ui.unit.DpSize(DEFAULT_WINDOW_WIDTH_DP.dp, DEFAULT_WINDOW_HEIGHT_DP.dp)
+    val config = runCatching {
+        java.awt.GraphicsEnvironment.getLocalGraphicsEnvironment()
+            .defaultScreenDevice
+            .defaultConfiguration
+    }.getOrNull() ?: return fallback
+    val bounds = config.bounds
+    val insets = runCatching { Toolkit.getDefaultToolkit().getScreenInsets(config) }.getOrNull()
+    val scale = runCatching { config.defaultTransform.scaleX }.getOrDefault(1.0).takeIf { it > 0.0 } ?: 1.0
+    val availableWidth = (bounds.width - (insets?.left ?: 0) - (insets?.right ?: 0)) / scale
+    val availableHeight = (bounds.height - (insets?.top ?: 0) - (insets?.bottom ?: 0)) / scale
+    if (availableWidth <= 0.0 || availableHeight <= 0.0) return fallback
+    return androidx.compose.ui.unit.DpSize(
+        width = minOf(DEFAULT_WINDOW_WIDTH_DP, (availableWidth * 0.94).toFloat()).dp,
+        height = minOf(DEFAULT_WINDOW_HEIGHT_DP, (availableHeight * 0.92).toFloat()).dp,
+    )
+}

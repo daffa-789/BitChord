@@ -84,11 +84,21 @@ internal object DesktopWindowVisibility {
      */
     fun onCloseRequest(): Boolean {
         if (!keepRunningWhenClosed) return true
+        hide()
+        return false
+    }
+
+    /**
+     * Puts the main window away without ending the process.
+     *
+     * Playback continues and, since the floating island is a window of its own, so does the
+     * capsule — which is the point: the app can be out of the way while the island stays on screen.
+     */
+    fun hide() {
         // A window put away full-screen comes back full-screen with nothing on it, which reads as
         // the app having broken rather than as it having been hidden.
         DesktopWindowMode.exit()
         _visible.value = false
-        DesktopTrackLog.log("window closed to the tray; playback continues")
-        return false
+        DesktopTrackLog.log("window hidden; playback continues")
     }
 }

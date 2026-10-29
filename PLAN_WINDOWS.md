@@ -146,7 +146,34 @@ flowchart TD
   - Menyimpan cookie dan identitas sesi ke `DesktopPersistence` dan backup file lokal di `~/.bitchord/`.
   - Mengaktifkan auto-restore sesi saat aplikasi diluncurkan di `DesktopApp.kt` dan `DesktopAccounts.kt`.
 
-#### Fase 5: Mini-Player, System Tray & Distribusi
+#### Fase 5: Menu Dynamic Island & Polish Desktop (Selesai!)
+- [x] **Menu Dynamic Island** — satu menu yang sama muncul di tiga tempat:
+  - **Klik kanan pada kapsul** (dibuka saat tombol dilepas, supaya klik kanan tidak ikut memilih menu).
+  - **Tombol 🎵 di toolbar**, yang ikonnya menyala saat island aktif di mana pun.
+  - **Halaman Settings → Dynamic Island**, lengkap dengan *live preview* yang memakai lagu yang sedang diputar.
+- [x] **Isi menu**: Play/Pause, Next, Previous, nyalakan/matikan kapsul mengambang, nyalakan/matikan island di top bar, pilih layout (Full/Compact/Mini), Lock/Reset posisi, buka panel lirik, dan pintasan ke Settings.
+- [x] **`DesktopDynamicIslandSettings.kt`** — semua preferensi island disimpan di satu tempat (`DesktopPersistence`): layout, sudut (6 posisi), ukuran 80–130%, opacity 35–100%, cover/kontrol/progress on-off, auto-collapse saat idle, sembunyi saat pause, lock posisi, dan offset hasil drag.
+- [x] **Tampilan lebih baik**:
+  - Tiga layout: **Full** (cover + 4 kontrol + 3 baris lirik), **Compact** (1 baris + play/pause), **Mini** (artwork + 1 baris).
+  - **Lirik bergulir**: blok tiga baris bergeser naik satu baris saat ganti lirik; baris aktif langsung putih penuh — tanpa animasi warna karaoke, sama seperti lembar lirik di layar Now Playing.
+  - Progress hairline dengan titik glow di ujung playhead, ukuran berubah dengan animasi spring.
+  - Kapsul otomatis mengecil ke Mini saat belum ada lagu (tidak ada kapsul besar yang kosong).
+  - Posisi default 60 dp di bawah toolbar, supaya tidak menutupi kontrol jendela.
+  - Drag hanya dengan tombol kiri (klik kanan tidak lagi menggeser kapsul).
+- [x] **Shortcut keyboard** <kbd>Ctrl</kbd> + <kbd>Alt</kbd> + <kbd>D</kbd> untuk menyalakan/mematikan island.
+- [x] **"Putar di Dynamic Island" di menu tiga titik setiap lagu** (`DesktopSongActions.onPlayInIsland`): menyalakan kapsul, lalu memutar lagunya kalau bukan lagu yang sedang diputar. Ada di menu baris lagu mana pun dan di menu pemutar.
+- [x] **Terjemahan Indonesia + Inggris** untuk seluruh UI island (48 kunci `d_island_*` di `desktop-en.xml` dan `desktop-id.xml`), dibaca saat digambar sehingga ganti bahasa langsung berlaku tanpa restart.
+- [x] **Memperbaiki terjemahan aplikasi yang selama ini tidak pernah aktif**:
+  - `UNICODE_ESCAPE` dideklarasikan *setelah* blok `init`, jadi nilainya masih `null` saat katalog pertama dimuat → NPE → `load()` menelan galat dan mengembalikan peta kosong. Akibatnya **semua** bahasa selalu jatuh ke Inggris.
+  - Regex dipindah ke atas `init`, dan kegagalan memuat katalog sekarang dicatat ke log (`DesktopTrackLog`) supaya tidak hilang diam-diam.
+  - Parser XML memakai `DocumentBuilderFactory.newDefaultInstance()` agar tidak tertukar dengan provider JAXP dari library lain di classpath.
+- [x] **Perbaikan build desktop**:
+  - `processResources` menduplikasi `models/*.onnx` sehingga `:desktopApp:run` gagal total — duplikat dihapus.
+  - Jendela kini dibuka sesuai *work area* layar (`openingWindowSize()`), jadi di layar 1080p dengan scaling 125–156% jendela tidak lagi terbuka lebih tinggi dari layar dan baris Settings tidak hilang di bawah.
+
+#### Fase 6: Mini-Player, System Tray & Distribusi
 - [ ] Aktifkan `DesktopAwtTray.kt` agar aplikasi bisa bersembunyi di System Tray Windows saat di-minimize.
 - [ ] Tambahkan toggle *Click-Through Mode* (`WS_EX_TRANSPARENT`) via JNI jika diinginkan.
+- [ ] Tambahkan entri "Dynamic Island" di menu tray.
+- [ ] Terjemahkan label menu/settings island ke katalog `desktop-id.xml` (sekarang masih Inggris, sama seperti fallback bahasa lain).
 - [ ] Paketkan menjadi installer Windows (`.msi` / executable mandiri) via Gradle task `packageMsi` / `packageDistributionForCurrentOS`.

@@ -39,10 +39,8 @@ class DesktopStringsTest {
         try {
             DesktopStrings.setLanguage("en")
             val english = DesktopStrings["d_output_precision", "Output precision"]
-            listOf("de", "fr", "ja", "ru").forEach { tag ->
-                DesktopStrings.setLanguage(tag)
-                assertNotEquals(english, DesktopStrings["d_output_precision", "Output precision"], tag)
-            }
+            DesktopStrings.setLanguage("id")
+            assertNotEquals(english, DesktopStrings["d_output_precision", "Output precision"], "id")
         } finally {
             DesktopStrings.setLanguage(before)
         }
@@ -68,8 +66,14 @@ class DesktopStringsTest {
 
     @Test
     fun `a key that exists comes back from the catalogue rather than the fallback`() {
-        // The fallback is deliberately wrong, so a pass proves the catalogue was read.
-        assertEquals("Settings", DesktopStrings["settings", "WRONG"])
+        val before = DesktopStrings.language.value
+        try {
+            // The fallback is deliberately wrong, so a pass proves the catalogue was read.
+            DesktopStrings.setLanguage("en")
+            assertEquals("Settings", DesktopStrings["settings", "WRONG"])
+        } finally {
+            DesktopStrings.setLanguage(before)
+        }
     }
 
     @Test
@@ -84,26 +88,48 @@ class DesktopStringsTest {
         try {
             DesktopStrings.setLanguage("en")
             val english = DesktopStrings["settings", "Settings"]
-            DesktopStrings.setLanguage("de")
-            val german = DesktopStrings["settings", "Settings"]
-            assertNotEquals(english, german, "German should not read as English")
-            assertEquals("Einstellungen", german)
-            DesktopStrings.setLanguage("ja")
-            assertNotEquals(english, DesktopStrings["settings", "Settings"])
+            DesktopStrings.setLanguage("id")
+            val indonesian = DesktopStrings["settings", "Settings"]
+            assertNotEquals(english, indonesian, "Indonesian should not read as English")
+            assertEquals("Pengaturan", indonesian)
+            DesktopStrings.setLanguage("en")
+            assertEquals(english, DesktopStrings["settings", "Settings"])
         } finally {
             DesktopStrings.setLanguage(before)
         }
     }
 
     @Test
-    fun `a locale missing a key falls back to English rather than showing the key`() {
+    fun `only English and Indonesian are offered`() {
+        assertEquals(listOf("en", "id"), DesktopStrings.available.map { it.tag })
+    }
+
+    @Test
+    fun `a stored language that is no longer offered lands on an offered one`() {
         val before = DesktopStrings.language.value
         try {
-            // Every catalogue is a subset of English, so a key only English has exercises this.
-            DesktopStrings.setLanguage("hi")
-            val value = DesktopStrings["settings", "Settings"]
-            assertTrue(value.isNotBlank())
-            assertNotEquals("settings", value, "a key leaked into the UI")
+            // A profile written before the picker was cut to two still says "de".
+            DesktopStrings.setLanguage("de")
+            assertEquals("en", DesktopStrings.resolvedTag())
+            assertEquals("en", DesktopStrings.language.value)
+            // A regional variant of an offered language keeps that language.
+            DesktopStrings.setLanguage("id-ID")
+            assertEquals("id", DesktopStrings.resolvedTag())
+        } finally {
+            DesktopStrings.setLanguage(before)
+        }
+    }
+
+    @Test
+    fun `a key missing from a catalogue falls back to English rather than showing the key`() {
+        val before = DesktopStrings.language.value
+        try {
+            // A key no catalogue has exercises the fallback chain, in every offered language.
+            DesktopStrings.available.forEach { language ->
+                DesktopStrings.setLanguage(language.tag)
+                val value = DesktopStrings["no_such_key_anywhere", "Settings"]
+                assertEquals("Settings", value, language.tag)
+            }
         } finally {
             DesktopStrings.setLanguage(before)
         }
@@ -142,13 +168,13 @@ class DesktopStringsTest {
     }
 
     @Test
-    fun `the language label names the stored choice`() {
+    fun `the language label names the language in force`() {
         val before = DesktopStrings.language.value
         try {
-            DesktopStrings.setLanguage("")
-            assertEquals("System default", DesktopStrings.languageLabel())
-            DesktopStrings.setLanguage("fr")
-            assertEquals("Français", DesktopStrings.languageLabel())
+            DesktopStrings.setLanguage("en")
+            assertEquals("English", DesktopStrings.languageLabel())
+            DesktopStrings.setLanguage("id")
+            assertEquals("Bahasa Indonesia", DesktopStrings.languageLabel())
         } finally {
             DesktopStrings.setLanguage(before)
         }
