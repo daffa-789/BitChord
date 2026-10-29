@@ -38,14 +38,14 @@ add_library(bitchord_analysis SHARED
     ${REPO_ROOT}/native/analyzer/resampler.cpp
     ${REPO_ROOT}/native/analyzer/mel_spectrogram.cpp
     ${REPO_ROOT}/native/analyzer/vocal_spectrogram.cpp
-    ${REPO_ROOT}/app/src/main/cpp/jni/analysis_jni.cpp
-    ${REPO_ROOT}/app/src/main/cpp/jni/mel_jni.cpp
-    ${REPO_ROOT}/app/src/main/cpp/jni/vocal_jni.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/jni/analysis_jni.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/jni/mel_jni.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/jni/vocal_jni.cpp
 )
 
 target_include_directories(bitchord_analysis PRIVATE
     ${REPO_ROOT}/native
-    ${REPO_ROOT}/app/src/main/cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/jni
 )
 
 # JNI headers come from the JDK running the build rather than from find_package,

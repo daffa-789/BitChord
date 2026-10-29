@@ -7,7 +7,7 @@ import org.jetbrains.kotlin.gradle.dsl.JvmTarget
 val appVersion: String = providers.gradleProperty("bitchord.version").orNull
     ?.removePrefix("v")
     ?.takeIf { it.isNotBlank() }
-    ?: "1.8-beta1"
+    ?: "1.8.0"
 
 /** Which platform this build is *for*, which is the host unless told otherwise. */
 val hostIsWindows = System.getProperty("os.name").contains("Windows", ignoreCase = true)
@@ -217,9 +217,17 @@ fun findOnPath(tool: String): File? {
             .filter(String::isNotBlank)
         listOf(tool) + extensions.map { tool + it.lowercase() }
     }
-    return System.getenv("PATH").orEmpty()
-        .split(File.pathSeparator)
+    val fallbackDirs = if (hostIsWindows) {
+        val userHome = System.getProperty("user.home").replace('\\', '/')
+        listOf(
+            "C:/Program Files/CMake/bin",
+            "$userHome/AppData/Local/Microsoft/WinGet/Links",
+            "$userHome/AppData/Local/Microsoft/WinGet/Packages/BrechtSanders.WinLibs.POSIX.UCRT_Microsoft.Winget.Source_8wekyb3d8bbwe/mingw64/bin",
+        )
+    } else emptyList()
+    val searchPaths = (System.getenv("PATH").orEmpty().split(File.pathSeparator) + fallbackDirs)
         .filter(String::isNotBlank)
+    return searchPaths
         .flatMap { directory -> names.map { File(directory, it) } }
         // A PATHEXT match is executable by definition, and Windows' own canExecute is unreliable.
         .firstOrNull { it.isFile && (hostIsWindows || it.canExecute()) && runs(it) }
@@ -233,7 +241,7 @@ val buildAnalysisNative by tasks.registering {
     val crossing = crossBuildingForWindows
     val toolchain = project.file("native/mingw-w64.cmake")
     inputs.dir(rootProject.file("native/analyzer"))
-    inputs.dir(rootProject.file("app/src/main/cpp/jni"))
+    inputs.dir(project.file("native/jni"))
     inputs.dir(project.file("native"))
     inputs.property("target", targetOs)
     outputs.dir(outputDir)
@@ -367,7 +375,7 @@ tasks.named<ProcessResources>("processResources") {
         into("native")
     }
     // The Automix models, taken from the Android module rather than copied into this one.
-    from(rootProject.file("app/src/main/assets")) {
+    from(project.file("src/main/resources/models")) {
         include("*.onnx")
         into("models")
     }

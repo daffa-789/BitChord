@@ -183,7 +183,6 @@ private fun desktopMain() = application {
             BitChordDesktopApp()
         }
     }
-    FloatingLyricsWindow()
 }
 
 private const val MIN_WINDOW_WIDTH_DP = 900.0
