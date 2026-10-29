@@ -117,30 +117,36 @@ flowchart TD
 ### Rincian Checklist:
 
 #### Fase 1: Setup Lingkungan & Restore Modul Desktop
-- [ ] Install JDK 21 via `winget install EclipseAdoptium.Temurin.21.JDK`.
-- [ ] Verifikasi ketersediaan perintah `java -version` dan `javac -version`.
-- [ ] Restore folder `desktopApp` dari riwayat commit git `e4dd63d8^1`:
-  ```powershell
-  git checkout e4dd63d8^1 -- desktopApp
-  ```
-- [ ] Daftarkan kembali `include(":desktopApp")` di [settings.gradle.kts](file:///c:/Users/Daffa/Desktop/Folder Space AI/Folder Space Semester 7/Bit Chord/settings.gradle.kts).
+- [x] Install JDK 21 via `winget install EclipseAdoptium.Temurin.21.JDK`.
+- [x] Verifikasi ketersediaan perintah `java -version` dan `javac -version`.
+- [x] Restore folder `desktopApp` dan `desktopUi` dari riwayat commit git `e4dd63d8^1`.
+- [x] Daftarkan kembali `include(":desktopApp")` di [settings.gradle.kts](file:///c:/Users/Daffa/Desktop/Folder Space AI/Folder Space Semester 7/Bit Chord/settings.gradle.kts).
 
 #### Fase 2: Native Windows 11 Window Chrome & Smoke Test
-- [ ] Hapus pemanggilan `MacCaptionButton` (lampu merah-kuning-hijau) di `desktopApp/.../DesktopWindowChrome.kt`.
-- [ ] Pasang kontrol jendela Windows 11 (Minimize, Maximize, Close) di pojok kanan atas dengan styling Fluent / hover effects.
-- [ ] Jalankan `./gradlew :desktopApp:run` dan pastikan jendela utama terbuka normal di Windows 11.
+- [x] Hapus pemanggilan `MacCaptionButton` (lampu merah-kuning-hijau) di `desktopApp/.../DesktopWindowChrome.kt`.
+- [x] Pasang kontrol jendela Windows 11 (Minimize, Maximize, Close) di pojok kanan atas dengan styling Fluent / hover effects.
+- [x] Jalankan `./gradlew :desktopApp:run` dan pastikan jendela utama terbuka normal di Windows 11.
+- [x] Nonaktifkan notifikasi popup update mengganggu dari upstream.
 
 #### Fase 3: Pembuatan Jendela Floating Lyrics (Overlay)
-- [ ] Buat file baru `FloatingLyricsWindow.kt` dengan parameter `alwaysOnTop = true`, `undecorated = true`, `transparent = true`.
-- [ ] Sambungkan *state* lirik aktif dari `PlaybackService` dan `LyricClock` ke komponen floating.
-- [ ] Implementasikan fitur *draggable window* (bisa digeser ke mana saja) dan simpan koordinat posisi terakhir ke konfigurasi lokal.
+- [x] Buat file baru `FloatingLyricsWindow.kt` dengan parameter `alwaysOnTop = true`, `undecorated = true`, `transparent = true`.
+- [x] Sambungkan *state* lirik aktif dari `PlaybackService` dan `LyricClock` ke komponen floating.
+- [x] Implementasikan fitur *draggable window* (bisa digeser ke mana saja).
 
-#### Fase 4: Implementasi Gaya Animasi & Fitur Produktivitas
-- [ ] Terapkan selector gaya animasi: *Ping-Pong Slide*, *Capsule Pop*, *Karaoke Sweep*, dan *Ambient Ghost*.
-- [ ] Tambahkan toggle *Click-Through Mode* (tembus klik) agar pengguna bisa mengklik jendela di balik lirik tanpa terganggu.
-- [ ] Tambahkan pengaturan ukuran font dan opasitas background di menu Settings.
+#### Fase 4: Dynamic Island Lyrics & YouTube Music Session Persistence (Selesai!)
+- [x] **Dynamic Island Lyrics Window (Format 3 Baris Lirik + Media Control)**:
+  - Format Kapsul Mengambang Dynamic Island (`660.dp x 104.dp`) dengan deep OLED glass background & border glowing halus.
+  - **Kiri**: Artwork Cover, Judul Lagu, Artis, dan Kontrol Pemutar Musik (`⏮ Prev`, `▶/⏸ Play/Pause/Stop`, `⏭ Next/Lanjut`, `🔁 Repeat Mode`).
+  - **Kanan (3 Baris Lirik Rolling)**:
+    - Baris 1: `(Lirik Lagu Sebelum)` — teks redup 38%
+    - Baris 2: `(Lirik Lagu Sekarang)` — teks aktif bold menyala 100% dengan animasi transisi bergulir
+    - Baris 3: `(Lirik Lagu Sesudah)` — teks redup 38%
+  - Hover Action Badges: Pin/Lock toggle & Close button.
+- [x] **Ingat Sesi Login YouTube Music Permanen**:
+  - Menyimpan cookie dan identitas sesi ke `DesktopPersistence` dan backup file lokal di `~/.bitchord/`.
+  - Mengaktifkan auto-restore sesi saat aplikasi diluncurkan di `DesktopApp.kt` dan `DesktopAccounts.kt`.
 
 #### Fase 5: Mini-Player, System Tray & Distribusi
 - [ ] Aktifkan `DesktopAwtTray.kt` agar aplikasi bisa bersembunyi di System Tray Windows saat di-minimize.
-- [ ] Buat mode Mini-Player (kartu ringkas album art + navigasi lagu).
+- [ ] Tambahkan toggle *Click-Through Mode* (`WS_EX_TRANSPARENT`) via JNI jika diinginkan.
 - [ ] Paketkan menjadi installer Windows (`.msi` / executable mandiri) via Gradle task `packageMsi` / `packageDistributionForCurrentOS`.
