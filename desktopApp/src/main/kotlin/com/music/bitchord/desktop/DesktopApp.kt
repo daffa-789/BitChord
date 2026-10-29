@@ -2945,22 +2945,10 @@ fun BitChordDesktopApp() {
                             goBack()
                             true
                         }
-                        DesktopPlatform.isMac && event.isMetaPressed && event.key == Key.Comma -> {
-                            openSettings()
-                            true
-                        }
-                        DesktopPlatform.isMac && event.isMetaPressed && event.key == Key.F -> {
-                            searchFocusRequested = true
-                            true
-                        }
-                        DesktopPlatform.isMac && event.isMetaPressed && event.key == Key.W -> {
-                            windowActions?.close?.invoke()
-                            true
-                        }
-                        DesktopPlatform.isMac && event.isMetaPressed && event.key == Key.M -> {
-                            windowActions?.minimize?.invoke()
-                            true
-                        }
+
+
+
+
                         // One layer at a time, innermost first: the player's own side panel, then
                         // the player.
                         event.key == Key.Escape -> when {
@@ -4129,19 +4117,7 @@ private fun DesktopTopBar(
     DesktopTitleBarDragArea(Modifier.fillMaxWidth().height(64.dp)) {
         Box(Modifier.fillMaxSize()) {
             Row(Modifier.fillMaxSize(), verticalAlignment = Alignment.CenterVertically) {
-            // The window's own buttons live at the head of the sidebar; a compact window has no
-            // sidebar, so there they lead this bar instead.
-            if (compact && inlineCaption && DesktopPlatform.isMac) {
-                Box(
-                    Modifier
-                        .fillMaxHeight()
-                        .desktopWindowGlass(DesktopChromeEdge.BOTTOM)
-                        .padding(start = if (DesktopPlatform.isMac) 16.dp else 10.dp),
-                    contentAlignment = Alignment.CenterStart,
-                ) {
-                    DesktopWindowButtons()
-                }
-            }
+
             Row(
                 Modifier
                     .weight(1f)
@@ -4385,20 +4361,7 @@ private fun DesktopSidebar(
             .desktopWindowGlass(DesktopChromeEdge.END, fade = 0.07f),
     ) {
         Column(Modifier.fillMaxSize()) {
-            // The sidebar runs to the top of the window, so its head is the window's caption: the
-            // three buttons, and room to take hold of the window by.
-            if (inlineCaption && DesktopPlatform.isMac) {
-                DesktopTitleBarDragArea(Modifier.fillMaxWidth().height(SIDEBAR_CAPTION_HEIGHT)) {
-                    Box(
-                        Modifier
-                            .fillMaxSize()
-                            .padding(start = if (DesktopPlatform.isMac) 16.dp else 10.dp),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        DesktopWindowButtons()
-                    }
-                }
-            }
+
         Column(
             Modifier.fillMaxSize().padding(start = 12.dp, end = 12.dp, top = if (inlineCaption) 4.dp else 16.dp, bottom = 16.dp),
         ) {
@@ -4837,13 +4800,11 @@ private fun DesktopFrame(
     val appBackground by DesktopWindowBackdrop.appBackground.collectAsState()
     val glass = material != DesktopBackdrop.OFF
     val materialBehindApp = glass && appBackground
-    val maximized by DesktopWindowMode.maximized.collectAsState()
-    val roundCorners = DesktopPlatform.isMac && !maximized
+
     CompositionLocalProvider(LocalDesktopHaze provides haze) {
         Box(
             modifier
                 .fillMaxSize()
-                .then(if (roundCorners) Modifier.clip(RoundedCornerShape(10.dp)) else Modifier)
                 .then(if (glass) Modifier else Modifier.background(containerColor)),
         ) {
             // Both sources of the same state: the chrome blurs the backdrop behind it, and the
@@ -5225,7 +5186,6 @@ private data class DesktopNavEntry(
 private const val NAV_HISTORY_LIMIT = 50
 
 /** The strip at the head of the sidebar that holds the window's buttons and can be dragged by. */
-private val SIDEBAR_CAPTION_HEIGHT = 34.dp
 
 
 @Composable
@@ -5929,11 +5889,9 @@ private fun DesktopSettingsScreen(
                                 Text(
                                     when {
                                         backdropChoice != DesktopBackdrop.OFF && backdropActive == DesktopBackdrop.OFF ->
-                                            if (DesktopPlatform.isMac) "Native vibrancy could not be attached"
-                                            else "Needs Windows 11 version 22H2 or later"
+                                            "Needs Windows 11 version 22H2 or later"
                                         backdropChoice == DesktopBackdrop.MICA ->
-                                            if (DesktopPlatform.isMac) "A subtle blur of your desktop wallpaper"
-                                            else "A soft tint taken from your wallpaper"
+                                            "A soft tint taken from your wallpaper"
                                         backdropChoice == DesktopBackdrop.ACRYLIC ->
                                             "A frosted blur of whatever is behind the window"
                                         else -> "Solid, as the rest of the app"
@@ -6979,20 +6937,7 @@ internal fun Modifier.desktopWindowGlass(
     return if (backdrop == DesktopBackdrop.OFF) {
         desktopChromeGlass(edge, fade)
     } else {
-        val base = background(Color.Black.copy(alpha = WINDOW_GLASS_TINT))
-        if (DesktopPlatform.isMac && edge == DesktopChromeEdge.BOTTOM) {
-            base.drawBehind {
-                // Subtle liquid glass specular highlight along the top edge
-                drawLine(
-                    color = Color.White.copy(alpha = 0.08f),
-                    start = Offset(0f, 0f),
-                    end = Offset(size.width, 0f),
-                    strokeWidth = 1f,
-                )
-            }
-        } else {
-            base
-        }
+        background(Color.Black.copy(alpha = WINDOW_GLASS_TINT))
     }
 }
 
@@ -7009,7 +6954,6 @@ internal fun desktopChromeDivider(): Color {
     val backdrop by DesktopWindowBackdrop.active.collectAsState()
     return when {
         backdrop == DesktopBackdrop.ACRYLIC -> Color.White.copy(alpha = 0.14f)
-        DesktopPlatform.isMac && backdrop != DesktopBackdrop.OFF -> Color.White.copy(alpha = 0.10f)
         else -> DesktopDivider
     }
 }

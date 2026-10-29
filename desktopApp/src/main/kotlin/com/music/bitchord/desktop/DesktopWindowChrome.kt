@@ -50,7 +50,7 @@ import kotlinx.coroutines.flow.StateFlow
 internal fun DesktopTitleBar() {
     val enabled by DesktopTitleBarSetting.enabled.collectAsState()
     if (!DesktopPlatform.drawsOwnWindowFrame || !enabled) return
-    val barHeight = if (DesktopPlatform.isWindows) 32.dp else CAPTION_HEIGHT
+    val barHeight = 32.dp
     DesktopTitleBarDragArea(
         Modifier
             .fillMaxWidth()
@@ -58,11 +58,7 @@ internal fun DesktopTitleBar() {
             .desktopWindowGlass(),
     ) {
         Box(Modifier.fillMaxSize()) {
-            if (DesktopPlatform.isWindows) {
-                WindowsCaptionButtons(Modifier.align(Alignment.CenterEnd))
-            } else {
-                DesktopWindowButtons(Modifier.align(Alignment.CenterStart))
-            }
+            WindowsCaptionButtons(Modifier.align(Alignment.CenterEnd))
         }
     }
 }
@@ -110,74 +106,6 @@ internal fun DesktopTitleBarDragArea(
     Box(modifier) {
         Box(Modifier.matchParentSize().captionPress(scope, actions))
         content()
-    }
-}
-
-/** The caption buttons. In the title bar when there is one, otherwise on the toolbar. */
-@Composable
-internal fun DesktopWindowButtons(modifier: Modifier = Modifier) {
-    if (!DesktopPlatform.drawsOwnWindowFrame) return
-    if (DesktopPlatform.isWindows) {
-        WindowsCaptionButtons(modifier)
-    } else {
-        MacWindowButtons(modifier)
-    }
-}
-
-@Composable
-internal fun MacWindowButtons(modifier: Modifier = Modifier) {
-    val actions = LocalDesktopWindowActions.current ?: return
-    val maximized by DesktopWindowMode.maximized.collectAsState()
-    val windowInfo = androidx.compose.ui.platform.LocalWindowInfo.current
-    val isFocused = windowInfo.isWindowFocused
-    val inactiveFill = if (!isFocused && DesktopPlatform.isMac) Color.White.copy(alpha = 0.22f) else null
-
-    Row(
-        modifier = modifier.height(CAPTION_HEIGHT).padding(start = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(0.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        MacCaptionButton("Close", MAC_CLOSE, onClick = actions.close, inactiveFill = inactiveFill) { glyph ->
-            val reach = GLYPH_HALF.toPx()
-            val line = HAIRLINE.toPx()
-            drawLine(
-                color = glyph,
-                start = Offset(center.x - reach, center.y - reach),
-                end = Offset(center.x + reach, center.y + reach),
-                strokeWidth = line,
-                cap = StrokeCap.Round,
-            )
-            drawLine(
-                color = glyph,
-                start = Offset(center.x + reach, center.y - reach),
-                end = Offset(center.x - reach, center.y + reach),
-                strokeWidth = line,
-                cap = StrokeCap.Round,
-            )
-        }
-        MacCaptionButton("Minimize", MAC_MINIMIZE, onClick = actions.minimize, inactiveFill = inactiveFill) { glyph ->
-            drawLine(
-                color = glyph,
-                start = Offset(center.x - GLYPH_HALF.toPx(), center.y),
-                end = Offset(center.x + GLYPH_HALF.toPx(), center.y),
-                strokeWidth = HAIRLINE.toPx(),
-                cap = StrokeCap.Round,
-            )
-        }
-        MacCaptionButton(
-            if (maximized) "Restore" else "Maximize",
-            MAC_MAXIMIZE,
-            onClick = actions.toggleMaximize,
-            inactiveFill = inactiveFill,
-        ) { glyph ->
-            val reach = GLYPH_HALF.toPx()
-            val line = HAIRLINE.toPx()
-            drawLine(glyph, Offset(center.x - reach, center.y + reach), Offset(center.x + reach, center.y - reach), line, StrokeCap.Round)
-            drawLine(glyph, Offset(center.x + reach, center.y - reach), Offset(center.x + 1.dp.toPx(), center.y - reach), line, StrokeCap.Round)
-            drawLine(glyph, Offset(center.x + reach, center.y - reach), Offset(center.x + reach, center.y - 1.dp.toPx()), line, StrokeCap.Round)
-            drawLine(glyph, Offset(center.x - reach, center.y + reach), Offset(center.x - 1.dp.toPx(), center.y + reach), line, StrokeCap.Round)
-            drawLine(glyph, Offset(center.x - reach, center.y + reach), Offset(center.x - reach, center.y + 1.dp.toPx()), line, StrokeCap.Round)
-        }
     }
 }
 
@@ -304,47 +232,11 @@ private fun WindowsCaptionButton(
     ) {}
 }
 
-@Composable
-private fun MacCaptionButton(
-    label: String,
-    fill: Color,
-    onClick: () -> Unit,
-    inactiveFill: Color? = null,
-    glyph: androidx.compose.ui.graphics.drawscope.DrawScope.(Color) -> Unit,
-) {
-    val interaction = remember { MutableInteractionSource() }
-    val hovered by interaction.collectIsHoveredAsState()
-    val buttonColor = if (inactiveFill != null && !hovered) inactiveFill else fill
-    Box(
-        Modifier
-            .size(CAPTION_TOUCH_SIZE)
-            .hoverable(interaction)
-            .pointerHoverIcon(PointerIcon.Default)
-            .clickable(
-                interactionSource = interaction,
-                indication = null,
-                onClick = onClick,
-            )
-            .semantics { contentDescription = label }
-            .drawBehind {
-                drawCircle(buttonColor, radius = MAC_DOT_RADIUS.toPx())
-                if (hovered) glyph(MAC_GLYPH)
-            },
-        contentAlignment = Alignment.Center,
-    ) {}
-}
-
 private val CAPTION_TOUCH_SIZE = 22.dp
-private val CAPTION_HEIGHT = 24.dp
-private val MAC_DOT_RADIUS = 6.dp
 
 private val GLYPH_HALF = 2.5.dp
 private val HAIRLINE = 0.75.dp
 
-private val MAC_CLOSE = Color(0xFFFF5F57)
-private val MAC_MINIMIZE = Color(0xFFFFBD2E)
-private val MAC_MAXIMIZE = Color(0xFF28C840)
-private val MAC_GLYPH = Color(0xB3000000)
 
 private fun Modifier.captionPress(scope: WindowScope, actions: DesktopWindowActions?): Modifier =
     pointerInput(scope, actions) {
@@ -363,7 +255,6 @@ private fun Modifier.captionPress(scope: WindowScope, actions: DesktopWindowActi
             lastPressAt = down.uptimeMillis
             lastPressPosition = down.position
             if (DesktopWindowsFrame.startDrag()) return@awaitEachGesture
-            if (DesktopPlatform.isMac && DesktopMacFrame.startDrag()) return@awaitEachGesture
             val window = scope.window
             val windowAtStart = window.location
             val pointerAtStart = MouseInfo.getPointerInfo()?.location ?: return@awaitEachGesture

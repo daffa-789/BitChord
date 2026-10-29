@@ -204,8 +204,13 @@ tidak ada fitur yang memang tidak pernah bisa aktif di mesin ini. Yang dibuang b
   lagi pemilihan "supplier" dan penitipan antrean pribadi.
 - [x] **Telemetri Presence** — ping "aplikasi terbuka" ke server upstream tiap ~5 menit, tanpa
   cara mematikannya dari Settings.
-- [ ] **Kode macOS** — `DesktopMacFrame` (550 baris, JNA) dan cabang `macos` di skrip Gradle: build
-  ini menargetkan Windows dan Linux, jadi bingkai Mac tidak pernah dipakai. Belum disentuh.
+- [x] **Kode macOS dibuang** — target repo ini Windows + Linux, jadi seluruh jalur Mac dihapus:
+  `DesktopMacFrame` (550 baris JNA) beserta testnya, `DesktopPlatform.isMac`, tombol traffic-light
+  (`MacWindowButtons` + `MacCaptionButton` + warna `MAC_*` + `CAPTION_HEIGHT`), drag dan vibrancy Mac,
+  listener Dock di `DesktopWindowVisibility.install()`, serta cabang `macos` di skrip Gradle
+  (classifier JavaCPP/JavaFX/Skiko, `TargetFormat.Dmg`/`Pkg`, dan blok `macOS {}`).
+  Perilaku Windows dan Linux tidak diubah: Windows tetap menggambar kapas sendiri lewat
+  `WindowsCaptionButtons`, dan Linux memakai Decoration Window Manager-nya.
 - [x] **Kode Linux dipertahankan** — MPRIS, StatusNotifier, `dbus-java` dan pemantau audio ALSA
   sengaja TIDAK dihapus: target repo ini Windows + Linux, dan job `desktop-linux` di CI menjaganya
   tetap terkompilasi.

@@ -12,16 +12,11 @@ val appVersion: String = providers.gradleProperty("bitchord.version").orNull
 /** Which platform this build is *for*, which is the host unless told otherwise. */
 val hostIsWindows = System.getProperty("os.name").contains("Windows", ignoreCase = true)
 val hostIsLinux = System.getProperty("os.name").contains("Linux", ignoreCase = true)
-val hostIsMac = System.getProperty("os.name").contains("Mac", ignoreCase = true)
 val targetOs: String = (providers.gradleProperty("bitchord.target").orNull ?: when {
     hostIsWindows -> "windows"
     hostIsLinux -> "linux"
-    hostIsMac -> "macos"
-    else -> error("BitChord desktop supports Linux, Windows, and macOS only")
+    else -> error("BitChord desktop supports Windows and Linux only")
 }).lowercase()
-
-val hostArch = System.getProperty("os.arch").lowercase()
-val isArm64 = hostArch == "aarch64" || hostArch == "arm64"
 
 // Windows installer metadata requires MAJOR.MINOR.BUILD even though the app's public version is
 // intentionally displayed without a patch number (1.7 rather than 1.7.0).
@@ -35,8 +30,7 @@ val ffmpegVersion = "7.1.1-$javacppVersion"
 val nativeClassifier = when (targetOs) {
     "windows" -> "windows-x86_64"
     "linux" -> "linux-x86_64"
-    "macos" -> if (isArm64) "macosx-arm64" else "macosx-x86_64"
-    else -> error("BitChord desktop supports Linux, Windows, and macOS only")
+    else -> error("BitChord desktop supports Windows and Linux only")
 }
 private fun localProperty(name: String): String = rootProject.file("local.properties")
     .takeIf { it.isFile }
@@ -46,7 +40,6 @@ private fun localProperty(name: String): String = rootProject.file("local.proper
     ?.trim()
     ?.takeIf { it.isNotBlank() }
     ?: System.getenv(name).orEmpty().trim()
-
 
 // Last.fm signs every request with these, so signing in from inside the app
 // needs them at hand. Supplied locally and never committed, as on Android.
@@ -71,7 +64,6 @@ dependencies {
     // WebView, the desktop in JavaFX's (WebKit). Per-platform jars carry the natives.
     val javafxClassifier = when (targetOs) {
         "windows" -> "win"
-        "macos" -> if (isArm64) "mac-aarch64" else "mac"
         else -> "linux"
     }
     listOf("base", "graphics", "controls", "media", "web").forEach { module ->
@@ -103,7 +95,6 @@ dependencies {
     implementation(
         when (targetOs) {
             "windows" -> compose.desktop.windows_x64
-            "macos" -> if (isArm64) compose.desktop.macos_arm64 else compose.desktop.macos_x64
             else -> compose.desktop.linux_x64
         }
     )
@@ -131,7 +122,6 @@ dependencies {
 
     // Same URL deobfuscation helper used by Android's StreamResolver.
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
-
 
     testImplementation(kotlin("test"))
 }
@@ -478,7 +468,6 @@ compose.desktop {
             jvmArgs("-Dbitchord.lastfm.key=$lastfmApiKey", "-Dbitchord.lastfm.secret=$lastfmSecret")
         }
 
-
         buildTypes.release.proguard {
             isEnabled.set(false)
             obfuscate.set(false)
@@ -488,8 +477,6 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(
-                TargetFormat.Dmg,
-                TargetFormat.Pkg,
                 TargetFormat.Exe,
                 TargetFormat.Msi,
                 TargetFormat.Deb,
@@ -497,7 +484,7 @@ compose.desktop {
             )
             packageName = "BitChord"
             packageVersion = nativePackageVersion
-            description = if (targetOs == "windows") "BitChord" else "Aesthetic YouTube Music client"
+            description = "BitChord"
             vendor = "BitChord contributors"
             copyright = "Copyright © 2026 BitChord contributors"
 
@@ -522,19 +509,6 @@ compose.desktop {
                 "jdk.unsupported",
                 "jdk.zipfs",
             )
-
-            macOS {
-                iconFile.set(project.file("packaging/icons/AppIcon.icns"))
-                bundleID = "com.music.bitchord"
-                appCategory = "public.app-category.music"
-                dockName = "BitChord"
-                infoPlist {
-                    extraKeysRawXml = """
-                        <key>NSRequiresAquaSystemAppearance</key>
-                        <false/>
-                    """.trimIndent()
-                }
-            }
 
             linux {
                 iconFile.set(project.file("packaging/icons/AppIcon.png"))

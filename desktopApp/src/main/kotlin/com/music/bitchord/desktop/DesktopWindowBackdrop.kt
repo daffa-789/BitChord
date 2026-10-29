@@ -26,13 +26,12 @@ internal object DesktopWindowBackdrop {
     internal const val KEY = "window_backdrop"
 
     /**
-     * Whether this window can carry a material: Windows 11 and the native frame. Decided once, at
+     * Whether this window can carry a material: Windows 11 with the native frame. Decided once, at
      * start, because it decides whether the window is created transparent.
      */
     val available: Boolean =
-        (DesktopPlatform.isWindows && DesktopPlatform.drawsOwnWindowFrame &&
-            System.getProperty("os.name").orEmpty().contains("11")) ||
-        DesktopPlatform.isMac
+        DesktopPlatform.isWindows && DesktopPlatform.drawsOwnWindowFrame &&
+            System.getProperty("os.name").orEmpty().contains("11")
 
     private val _selected = MutableStateFlow(
         runCatching { DesktopBackdrop.valueOf(DesktopPersistence().string(KEY, DesktopBackdrop.MICA.name)) }
@@ -53,7 +52,7 @@ internal object DesktopWindowBackdrop {
 
     /**
      * The material actually behind the window right now. Off until the native frame is installed,
-     * and off if Windows or macOS turned the request down: the chrome only goes translucent over
+     * and off if Windows turned the request down: the chrome only goes translucent over
      * a material that is really there.
      */
     val active: StateFlow<DesktopBackdrop> = _active
@@ -75,7 +74,6 @@ internal object DesktopWindowBackdrop {
         val wanted = _selected.value
         val applied = when {
             DesktopPlatform.isWindows -> DesktopWindowsFrame.setBackdrop(wanted.nativeKind)
-            DesktopPlatform.isMac -> DesktopMacFrame.setBackdrop(wanted.nativeKind)
             else -> false
         }
         _active.value = if (applied) wanted else DesktopBackdrop.OFF

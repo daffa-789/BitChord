@@ -29,7 +29,6 @@ import org.jetbrains.compose.resources.painterResource
 fun main() {
     // Before any WebView exists, so the sign-in window can start over with an empty jar.
     DesktopWebCookies.install()
-    DesktopWindowVisibility.install()
     // The player is the phone's, from the shared UI module; this is what it reads underneath.
     PlayerPlatform.install(DesktopPlayerHost)
     com.music.bitchord.ui.AppUi.install(DesktopAppUiHost)
@@ -85,12 +84,7 @@ private fun desktopMain() = application {
     LaunchedEffect(state) {
         snapshotFlow { state.placement }.collect(DesktopWindowMode::adopt)
     }
-    val maximized by DesktopWindowMode.maximized.collectAsState()
-    LaunchedEffect(maximized) {
-        if (DesktopPlatform.isMac) {
-            DesktopMacFrame.updateCornerRadius(maximized)
-        }
-    }
+
     Window(
         onCloseRequest = { if (DesktopWindowVisibility.onCloseRequest()) exitApplication() },
         visible = visible,
@@ -139,9 +133,7 @@ private fun desktopMain() = application {
                 (openingSize.width.value * transform.scaleX).roundToInt(),
                 (openingSize.height.value * transform.scaleY).roundToInt(),
             )
-            if (DesktopPlatform.isWindows && DesktopWindowsFrame.install("BitChord")) {
-                DesktopWindowBackdrop.apply()
-            } else if (DesktopPlatform.isMac && DesktopMacFrame.install(composeWindow)) {
+            if (DesktopWindowsFrame.install("BitChord")) {
                 DesktopWindowBackdrop.apply()
             }
         }
