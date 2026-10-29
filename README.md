@@ -48,7 +48,7 @@
 - **Gapless playback with true crossfade**, adjustable 0–12s, and an optional blend on a manual skip.
 - **Offline downloads** — save tracks with embedded metadata.
 - **Local music library** integration.
-- **Background playback** via a proper foreground media session.
+- **Keeps playing while you work** — OS media keys and the system media overlay, through SMTC on Windows and MPRIS on Linux.
 - **Apple-like lyrics animation** — credit to [binimum](https://github.com/binimum/am-lyrics).
 
 #### Connectivity & Accounts

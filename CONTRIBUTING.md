@@ -20,18 +20,24 @@ When contributing:
 - Address review feedback promptly and keep discussions focused on technical merits.
 
 ## Development Setup
-The project requires the following tools:
-- **JDK**: Java Development Kit 17 (Eclipse Temurin 17 recommended).
-- **Android SDK**: `compileSdk = 36`, `targetSdk = 36`, `minSdk = 26`.
-- **C/C++ NDK & CMake**: CMake 3.22.1+ and Android NDK (for native audio DSP components configured under `app/src/main/cpp`).
-- **Listen Together Backend (Optional)**: Go 1.22+ if developing or testing the party server (`backend/`).
+This tree is the desktop client: Compose Desktop on the JVM, for Windows and Linux. The tools are:
+- **JDK**: Java Development Kit 21 (Eclipse Temurin 21 recommended). `JAVA_HOME` should point at it;
+  the Gradle toolchain asks for 21 and there is no machine-specific path committed to pin it.
+- **CMake, Ninja and a MinGW C++ compiler** (Windows, optional): they build the native window frame
+  (`desktopApp/native/window`) and the SMTC media controls (`desktopApp/native/smtc`). Without them the
+  app still builds and runs — it just falls back to Compose's own frameless window and has no media keys.
+- **No Android SDK, no NDK, no party server.** Those belong to the upstream phone build.
 
 ## Build and Test Commands
 Run Gradle commands from the repository root.
 
-Build:
+Build and run:
 ```bash
-./gradlew assembleDevDebug
+./gradlew :desktopApp:run              # the app itself
+./gradlew :desktopApp:compileKotlin    # compile only
+./gradlew :desktopApp:packageMsi       # Windows installer
+./gradlew :desktopApp:windowsPortable  # Windows portable zip
+./gradlew :desktopApp:packageDeb       # Linux .deb (run this on Linux)
 ```
 
 Windows:
@@ -41,18 +47,13 @@ Windows:
 
 Tests:
 ```bash
-./gradlew testDevDebugUnitTest
+./gradlew :desktopApp:test
+./gradlew :desktopApp:test --tests "com.music.bitchord.desktop.DesktopCrossfadePositionTest"
 ```
 
-Windows:
-```powershell
-.\gradlew.bat testDevDebugUnitTest
-```
-
-Run a specific test:
-```bash
-./gradlew testDevDebugUnitTest --tests "com.music.bitchord.playback.audio.DirectAudioStreamingRegressionTest"
-```
+Two suites need a cached dependency that is not always available offline — `:shared:jvmTest` wants `mockwebserver` and `:desktopUi:jvmTest` wants `kotlinx-datetime`. Run them without
+`--offline` once so Gradle can fetch them; CI only compiles, so a red local suite there is not a
+CI failure.
 
 ## Code Quality
 - Follow idiomatic Kotlin and Jetpack Compose conventions.
@@ -64,7 +65,7 @@ Run a specific test:
 ## Audio Changes and Telemetry
 For audio changes: application telemetry must not be presented as proof of physical hardware behavior unless that hardware behavior was actually verified.
 
-Distinguish clearly between source metadata, decoder format, internal DSP format, AudioTrack output, AudioFlinger/HAL state, advertised device capability, and external physical endpoint behavior.
+Distinguish clearly between source metadata, decoder format, internal DSP format, what the output stream accepted (WASAPI on Windows, ALSA on Linux), advertised device capability, and external physical endpoint behavior.
 
 ## Review Process
 All pull requests require review and approval by repository maintainers before merging. Maintainers review changes for correctness, architecture fit, and maintainability.

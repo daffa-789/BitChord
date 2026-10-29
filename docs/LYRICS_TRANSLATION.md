@@ -8,7 +8,7 @@ position, line activation and playback-driven highlighting. A compact button in
 the full lyrics view switches between the original and translated versions.
 
 This contribution is intentionally limited to lyrics translation. It does not
-change Automix, playback transitions, source replacement or audio processing.
+change the crossfade, playback transitions, source replacement or audio processing.
 
 ## User flow
 
