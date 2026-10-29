@@ -71,6 +71,7 @@
     <string name="d_island_cover_subtitle">Menampilkan sampul album di samping lagu</string>
     <string name="d_island_floating">Kapsul mengambang</string>
     <string name="d_island_floating_subtitle">Kapsul di atas halaman berisi sampul, kontrol, dan lirik yang sedang dinyanyikan</string>
+    <string name="d_island_tray">Island</string>
     <string name="d_island_hide_paused">Sembunyikan saat jeda</string>
     <string name="d_island_hide_paused_subtitle">Menghilangkan kapsul dari halaman setiap kali pemutaran dijeda</string>
     <string name="d_island_layout">Tata letak</string>

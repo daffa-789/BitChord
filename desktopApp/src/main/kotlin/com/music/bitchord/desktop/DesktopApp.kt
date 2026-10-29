@@ -2252,6 +2252,7 @@ fun BitChordDesktopApp() {
                 DesktopWindowVisibility.show()
                 openSettings()
             },
+            onToggleIsland = { DesktopFloatingLyricsManager.toggle() },
             onQuit = {
                 // Native work first: the audio thread and the media controls are inside FFmpeg,
                 // WASAPI and WinRT, and exitProcess would unload those libraries under them.

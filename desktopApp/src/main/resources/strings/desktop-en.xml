@@ -73,6 +73,7 @@
     <string name="d_island_cover_subtitle">Shows the album cover beside the song</string>
     <string name="d_island_floating">Floating island</string>
     <string name="d_island_floating_subtitle">A capsule over the page with the cover, the controls and the lyric being sung</string>
+    <string name="d_island_tray">Dynamic Island</string>
     <string name="d_island_hide_paused">Hide while paused</string>
     <string name="d_island_hide_paused_subtitle">Takes the capsule off the page whenever playback is paused</string>
     <string name="d_island_layout">Layout</string>

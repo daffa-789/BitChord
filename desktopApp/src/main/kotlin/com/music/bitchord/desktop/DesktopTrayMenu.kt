@@ -27,6 +27,7 @@ internal object DesktopTrayMenu {
     private const val ID_SETTINGS = 8
     private const val ID_SEPARATOR_BOTTOM = 9
     private const val ID_QUIT = 10
+    private const val ID_ISLAND = 11
 
     private val lock = Any()
 
@@ -39,6 +40,7 @@ internal object DesktopTrayMenu {
     private var previous: () -> Unit = {}
     private var openPlayer: () -> Unit = {}
     private var openSettings: () -> Unit = {}
+    private var toggleIsland: () -> Unit = {}
     private var quit: () -> Unit = {}
 
     /** Told to the host so it knows the menu it holds has gone stale. */
@@ -50,6 +52,7 @@ internal object DesktopTrayMenu {
         onPrevious: () -> Unit,
         onOpenPlayer: () -> Unit,
         onOpenSettings: () -> Unit,
+        onToggleIsland: () -> Unit,
         onQuit: () -> Unit,
     ) = synchronized(lock) {
         playPause = onPlayPause
@@ -57,6 +60,7 @@ internal object DesktopTrayMenu {
         previous = onPrevious
         openPlayer = onOpenPlayer
         openSettings = onOpenSettings
+        toggleIsland = onToggleIsland
         quit = onQuit
     }
 
@@ -94,6 +98,14 @@ internal object DesktopTrayMenu {
             add(Entry(ID_PREVIOUS, label = DesktopStrings["widget_previous", "Previous"], icon = "media-skip-backward", action = previous))
             add(Entry(ID_SEPARATOR_MIDDLE, separator = true))
             add(Entry(ID_OPEN_PLAYER, label = DesktopStrings["widget_open_bitchord", "Open BitChord"], icon = "media-playback-start", action = openPlayer))
+            add(
+                Entry(
+                    ID_ISLAND,
+                    label = DesktopStrings["d_island_tray", "Dynamic Island"],
+                    icon = "view-media-lyrics",
+                    action = toggleIsland,
+                ),
+            )
             add(Entry(ID_SETTINGS, label = DesktopStrings["settings", "Settings"], icon = "preferences-system", action = openSettings))
             add(Entry(ID_SEPARATOR_BOTTOM, separator = true))
             add(Entry(ID_QUIT, label = DesktopStrings["d_quit_bitchord", "Quit BitChord"], icon = "application-exit", action = quit))

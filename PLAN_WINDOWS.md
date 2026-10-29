@@ -176,7 +176,10 @@ flowchart TD
   (`setIcon`/`start`/`update`/`stop`), bersama toggle "ikon tray" dan "tetap putar saat ditutup" di
   Settings.
 - [ ] Tambahkan toggle *Click-Through Mode* (`WS_EX_TRANSPARENT`) via JNI jika diinginkan.
-- [ ] Tambahkan entri "Dynamic Island" di menu tray.
+- [x] Entri "Dynamic Island" di menu tray — memanggil `DesktopFloatingLyricsManager.toggle()`, sama
+  seperti pintasan <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd>. Menu-nya satu definisi untuk tray AWT
+  Windows dan StatusNotifier Linux (`DesktopTrayMenu.entries()`), labelnya dari kunci `d_island_tray`
+  di katalog Inggris dan Indonesia.
 - [x] Label island sudah diterjemahkan: 48 kunci `d_island_*` ada di `desktop-en.xml` **dan**
   `desktop-id.xml`, dan uji katalog memastikan tidak ada kunci desktop yang hilang di bahasa lain.
 - [ ] Paketkan menjadi installer Windows (`.msi` / executable mandiri) via Gradle task `packageMsi` / `packageDistributionForCurrentOS`. Tugas `windowsPortable` sudah terverifikasi menghasilkan folder berjalan dengan native Windows di dalam jar.
