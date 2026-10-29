@@ -49,14 +49,29 @@ internal object DesktopAccounts {
     private val json = Json { ignoreUnknownKeys = true; encodeDefaults = true }
     private val persistence get() = DesktopPersistence()
 
+    private val sessionBackupDir by lazy {
+        val home = System.getProperty("user.home")
+        java.nio.file.Paths.get(home, ".bitchord").also {
+            runCatching { java.nio.file.Files.createDirectories(it) }
+        }
+    }
+    private val accountsBackupFile by lazy { sessionBackupDir.resolve("accounts_backup.json") }
+    private val activeAccountBackupFile by lazy { sessionBackupDir.resolve("active_account.txt") }
+    private val activeProfileBackupFile by lazy { sessionBackupDir.resolve("active_profile.txt") }
+    private fun cookieBackupFile(accountId: String) = sessionBackupDir.resolve("cookie_$accountId.dat")
+
     fun accounts(): List<DesktopGoogleAccount> {
-        val raw = DesktopPreferenceChunks.read(persistence.preferences, KEY_ACCOUNTS) ?: return emptyList()
+        val raw = DesktopPreferenceChunks.read(persistence.preferences, KEY_ACCOUNTS)
+            ?: runCatching { java.nio.file.Files.readString(accountsBackupFile) }.getOrNull()
+            ?: return emptyList()
         return runCatching { json.decodeFromString<List<DesktopGoogleAccount>>(raw) }.getOrDefault(emptyList())
     }
 
     fun activeAccountId(): String? = persistence.string(KEY_ACTIVE_ACCOUNT).takeIf { it.isNotBlank() }
+        ?: runCatching { java.nio.file.Files.readString(activeAccountBackupFile).trim().takeIf(String::isNotBlank) }.getOrNull()
 
     fun activeProfileId(): String? = persistence.string(KEY_ACTIVE_PROFILE).takeIf { it.isNotBlank() }
+        ?: runCatching { java.nio.file.Files.readString(activeProfileBackupFile).trim().takeIf(String::isNotBlank) }.getOrNull()
 
     fun active(): DesktopGoogleAccount? =
         accounts().firstOrNull { it.accountId == activeAccountId() } ?: accounts().firstOrNull()
@@ -283,22 +298,33 @@ internal object DesktopAccounts {
     fun select(accountId: String, profileId: String?) {
         persistence.saveString(KEY_ACTIVE_ACCOUNT, accountId)
         persistence.saveString(KEY_ACTIVE_PROFILE, profileId.orEmpty())
+        runCatching {
+            java.nio.file.Files.writeString(activeAccountBackupFile, accountId)
+            java.nio.file.Files.writeString(activeProfileBackupFile, profileId.orEmpty())
+        }
         applyActive()
     }
 
     fun remove(accountId: String) {
         DesktopSecretStore.remove(attributesFor(accountId))
         persistence.saveString(cookieFallbackKey(accountId), "")
+        runCatching { java.nio.file.Files.deleteIfExists(cookieBackupFile(accountId)) }
         val remaining = accounts().filterNot { it.accountId == accountId }
         write(remaining)
         val next = remaining.firstOrNull()
         persistence.saveString(KEY_ACTIVE_ACCOUNT, next?.accountId.orEmpty())
         persistence.saveString(KEY_ACTIVE_PROFILE, next?.activeProfileId.orEmpty())
+        runCatching {
+            java.nio.file.Files.writeString(activeAccountBackupFile, next?.accountId.orEmpty())
+            java.nio.file.Files.writeString(activeProfileBackupFile, next?.activeProfileId.orEmpty())
+        }
         applyActive()
     }
 
     private fun write(value: List<DesktopGoogleAccount>) {
-        DesktopPreferenceChunks.write(persistence.preferences, KEY_ACCOUNTS, json.encodeToString(kotlinx.serialization.builtins.ListSerializer(DesktopGoogleAccount.serializer()), value))
+        val serialized = json.encodeToString(kotlinx.serialization.builtins.ListSerializer(DesktopGoogleAccount.serializer()), value)
+        DesktopPreferenceChunks.write(persistence.preferences, KEY_ACCOUNTS, serialized)
+        runCatching { java.nio.file.Files.writeString(accountsBackupFile, serialized) }
     }
 
     // ---- Where the credential itself lives ---------------------------------
@@ -319,12 +345,15 @@ internal object DesktopAccounts {
             DesktopTrackLog.log("no keyring available; keeping the session in preferences instead")
             DesktopPreferenceChunks.write(persistence.preferences, cookieFallbackKey(accountId), cookie)
         }
+        // Always persist a backup file on Windows so sessions survive registry resets
+        runCatching { java.nio.file.Files.writeString(cookieBackupFile(accountId), cookie) }
     }
 
     fun cookieOf(accountId: String): String? =
         DesktopSecretStore.lookup(attributesFor(accountId))?.toString(Charsets.UTF_8)?.takeIf { it.isNotBlank() }
             ?: DesktopPreferenceChunks.read(persistence.preferences, cookieFallbackKey(accountId))
                 ?.takeIf { it.isNotBlank() }
+            ?: runCatching { java.nio.file.Files.readString(cookieBackupFile(accountId)).trim().takeIf(String::isNotBlank) }.getOrNull()
 
     private fun cookieFallbackKey(accountId: String) = "google_cookie_$accountId"
 

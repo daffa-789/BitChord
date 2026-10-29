@@ -489,7 +489,7 @@ private enum class DesktopDestination(val id: String, val label: String) {
     SETTINGS("settings", "Settings"),
 }
 
-private enum class DesktopRepeatMode {
+internal enum class DesktopRepeatMode {
     OFF,
     ALL,
     ONE,
@@ -753,6 +753,10 @@ fun BitChordDesktopApp() {
     // that depends on it.
     LaunchedEffect(Unit) {
         withContext(Dispatchers.IO) { DesktopAccounts.activate() }
+        accounts = withContext(Dispatchers.IO) { DesktopAccounts.accounts() }
+        activeAccountId = DesktopAccounts.activeAccountId()
+        activeProfileId = DesktopAccounts.activeProfileId()
+        youtubeSignedIn = DesktopYouTubeAuth.isSignedIn
         sessionRevision++
     }
     var audioQuality by remember { mutableStateOf(persistence.audioQuality()) }
@@ -3034,10 +3038,18 @@ fun BitChordDesktopApp() {
 
     // What the player and the lyrics column beside the page both read, worked out once for the two.
     val sharedLyrics = lyrics?.lines
-    LaunchedEffect(selectedSong, playback.isPlaying, sharedLyrics) {
+    LaunchedEffect(selectedSong, playback.isPlaying, sharedLyrics, repeatMode) {
         DesktopFloatingLyricsManager.currentSong.value = selectedSong
         DesktopFloatingLyricsManager.isPlaying.value = playback.isPlaying
         DesktopFloatingLyricsManager.lyricsLines.value = sharedLyrics
+        DesktopFloatingLyricsManager.repeatMode.value = repeatMode
+        DesktopFloatingLyricsManager.onPlayPause = { if (selectedSong != null) togglePlayPauseFromUser() }
+        DesktopFloatingLyricsManager.onNext = { playNext() }
+        DesktopFloatingLyricsManager.onPrevious = { playPrevious() }
+        DesktopFloatingLyricsManager.onToggleRepeat = {
+            repeatMode = repeatMode.next()
+            persistence.saveString("repeat_mode", repeatMode.name)
+        }
     }
     LaunchedEffect(playbackEngine) {
         playbackEngine.state.collect {

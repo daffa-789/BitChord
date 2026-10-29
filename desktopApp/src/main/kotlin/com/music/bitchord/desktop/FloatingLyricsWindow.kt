@@ -1,19 +1,12 @@
 package com.music.bitchord.desktop
 
 import androidx.compose.animation.AnimatedContent
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.spring
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
-import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -36,28 +29,23 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.DragIndicator
-import androidx.compose.material.icons.rounded.FormatPaint
+import androidx.compose.material.icons.rounded.FastForward
+import androidx.compose.material.icons.rounded.FastRewind
 import androidx.compose.material.icons.rounded.Lock
 import androidx.compose.material.icons.rounded.LockOpen
-import androidx.compose.material.icons.rounded.MusicNote
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableIntStateOf
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
@@ -65,6 +53,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerIcon
 import androidx.compose.ui.input.pointer.pointerHoverIcon
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
@@ -76,66 +65,58 @@ import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
 import com.music.bitchord.data.lyrics.LyricLine
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.ui.icons.BitChordIcons
 import java.awt.Toolkit
 import kotlinx.coroutines.flow.MutableStateFlow
 
-/** Available animation styles for Floating Desktop Lyrics. */
-enum class FloatingLyricsStyle(val title: String) {
-    PING_PONG("Ping-Pong (Kiri-Kanan)"),
-    CAPSULE_POP("Capsule Pop (Atas)"),
-    KARAOKE_SWEEP("Karaoke Sweep"),
-    AMBIENT_GHOST("Ambient Ghost"),
-}
-
-/** Global Manager to control and feed state into the Floating Lyrics Overlay. */
-object DesktopFloatingLyricsManager {
+/** Global Manager to control and feed state into the Floating Dynamic Island Lyrics. */
+internal object DesktopFloatingLyricsManager {
     val isEnabled = MutableStateFlow(false)
-    val selectedStyle = MutableStateFlow(FloatingLyricsStyle.PING_PONG)
     val isLocked = MutableStateFlow(false)
-    val fontSizeSp = MutableStateFlow(22)
 
     // Playback state fed from DesktopApp
     val currentSong = MutableStateFlow<Song?>(null)
     val isPlaying = MutableStateFlow(false)
     val lyricsLines = MutableStateFlow<List<LyricLine>?>(null)
     val currentPositionMs = MutableStateFlow(0L)
+    val repeatMode = MutableStateFlow(DesktopRepeatMode.OFF)
+
+    // Player action callbacks
+    var onPlayPause: (() -> Unit)? = null
+    var onNext: (() -> Unit)? = null
+    var onPrevious: (() -> Unit)? = null
+    var onToggleRepeat: (() -> Unit)? = null
 
     fun toggle() {
         isEnabled.value = !isEnabled.value
     }
-
-    fun cycleStyle() {
-        val all = FloatingLyricsStyle.values()
-        val nextIndex = (selectedStyle.value.ordinal + 1) % all.size
-        selectedStyle.value = all[nextIndex]
-    }
 }
 
-/** The secondary Floating Desktop Lyrics Window. */
+/** The secondary Floating Dynamic Island Lyrics Window. */
 @Composable
 internal fun FloatingLyricsWindow() {
     val isEnabled by DesktopFloatingLyricsManager.isEnabled.collectAsState()
     if (!isEnabled) return
 
     val screenSize = Toolkit.getDefaultToolkit().screenSize
-    val initialWidth = 720
-    val initialHeight = 110
-    val startX = (screenSize.width - initialWidth) / 2
-    val startY = screenSize.height - initialHeight - 90 // Float above taskbar by default
+    val islandWidth = 660
+    val islandHeight = 104
+    val startX = (screenSize.width - islandWidth) / 2
+    val startY = 32 // Float at the top of the screen (Authentic Dynamic Island placement)
 
     val windowState = rememberWindowState(
         position = WindowPosition(startX.dp, startY.dp),
-        size = DpSize(initialWidth.dp, initialHeight.dp),
+        size = DpSize(islandWidth.dp, islandHeight.dp),
     )
 
     Window(
         onCloseRequest = { DesktopFloatingLyricsManager.isEnabled.value = false },
-        title = "BitChord - Floating Lyrics",
+        title = "BitChord - Dynamic Island Lyrics",
         state = windowState,
         alwaysOnTop = true,
         undecorated = true,
         transparent = true,
-        resizable = true,
+        resizable = false,
     ) {
         val composeWindow = window
         LaunchedEffect(composeWindow) {
@@ -144,7 +125,7 @@ internal fun FloatingLyricsWindow() {
             composeWindow.rootPane.isOpaque = false
         }
 
-        FloatingLyricsContent(
+        DynamicIslandLyricsContent(
             onDragWindow = { dx, dy ->
                 val currentLoc = composeWindow.location
                 composeWindow.setLocation(currentLoc.x + dx, currentLoc.y + dy)
@@ -154,16 +135,15 @@ internal fun FloatingLyricsWindow() {
 }
 
 @Composable
-private fun FloatingLyricsContent(onDragWindow: (Int, Int) -> Unit) {
+private fun DynamicIslandLyricsContent(onDragWindow: (Int, Int) -> Unit) {
     val song by DesktopFloatingLyricsManager.currentSong.collectAsState()
     val isPlaying by DesktopFloatingLyricsManager.isPlaying.collectAsState()
     val lines by DesktopFloatingLyricsManager.lyricsLines.collectAsState()
     val positionMs by DesktopFloatingLyricsManager.currentPositionMs.collectAsState()
-    val currentStyle by DesktopFloatingLyricsManager.selectedStyle.collectAsState()
+    val repeatMode by DesktopFloatingLyricsManager.repeatMode.collectAsState()
     val isLocked by DesktopFloatingLyricsManager.isLocked.collectAsState()
-    val fontSize by DesktopFloatingLyricsManager.fontSizeSp.collectAsState()
 
-    // Determine current active lyric line
+    // Determine active, previous, and next lyric lines
     val activeIndex = remember(lines, positionMs) {
         val list = lines.orEmpty()
         var idx = -1
@@ -177,12 +157,19 @@ private fun FloatingLyricsContent(onDragWindow: (Int, Int) -> Unit) {
         idx
     }
 
-    val activeLine = lines?.getOrNull(activeIndex)
-    val nextLine = lines?.getOrNull(activeIndex + 1)
-    val lyricText = when {
-        activeLine != null && activeLine.text.isNotBlank() -> activeLine.text
-        song != null -> "${song?.title} · ${song?.artist}"
-        else -> "BitChord Floating Lyrics"
+    val prevLineText = remember(lines, activeIndex) {
+        if (activeIndex > 0) lines?.getOrNull(activeIndex - 1)?.text.orEmpty() else ""
+    }
+    val currentLineText = remember(lines, activeIndex, song) {
+        val active = lines?.getOrNull(activeIndex)?.text
+        when {
+            !active.isNullOrBlank() -> active
+            song != null -> "${song?.title} — ${song?.artist}"
+            else -> "BitChord • Menunggu pemutaran lagu..."
+        }
+    }
+    val nextLineText = remember(lines, activeIndex) {
+        if (activeIndex >= 0) lines?.getOrNull(activeIndex + 1)?.text.orEmpty() else ""
     }
 
     val interactionSource = remember { MutableInteractionSource() }
@@ -198,153 +185,259 @@ private fun FloatingLyricsContent(onDragWindow: (Int, Int) -> Unit) {
         }
     } else Modifier
 
-    // Outer container: translucent dark glass with subtle glow
-    val bgAlpha = if (currentStyle == FloatingLyricsStyle.AMBIENT_GHOST) 0.0f else (if (isHovered) 0.88f else 0.72f)
-    val shape = RoundedCornerShape(18.dp)
+    // Outer Dynamic Island capsule
+    val pillShape = RoundedCornerShape(26.dp)
 
     Box(
         Modifier
             .fillMaxSize()
-            .padding(4.dp)
+            .padding(2.dp)
             .hoverable(interactionSource)
             .then(dragModifier),
     ) {
-        Box(
+        Row(
             Modifier
                 .fillMaxSize()
-                .clip(shape)
-                .background(Color(0xFF161618).copy(alpha = bgAlpha))
-                .border(
-                    width = if (currentStyle == FloatingLyricsStyle.AMBIENT_GHOST) 0.dp else 1.dp,
-                    brush = Brush.linearGradient(
+                .clip(pillShape)
+                .background(
+                    Brush.verticalGradient(
                         colors = listOf(
-                            Color.White.copy(alpha = if (isHovered) 0.25f else 0.12f),
-                            Color.White.copy(alpha = 0.03f),
+                            Color(0xF7131317),
+                            Color(0xFA09090C),
                         ),
                     ),
-                    shape = shape,
                 )
-                .padding(horizontal = 20.dp, vertical = 8.dp),
+                .border(
+                    width = 1.dp,
+                    brush = Brush.verticalGradient(
+                        colors = listOf(
+                            Color.White.copy(alpha = if (isHovered) 0.32f else 0.18f),
+                            Color.White.copy(alpha = 0.05f),
+                        ),
+                    ),
+                    shape = pillShape,
+                )
+                .padding(horizontal = 14.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            // Control action buttons on hover (Lock, Change Style, Close)
-            if (isHovered || isLocked) {
+            // ==========================================
+            // BAGIAN KIRI: Judul Lagu + Kontrol (Stop/Lanjut/Repeat)
+            // ==========================================
+            Column(
+                Modifier
+                    .width(235.dp)
+                    .padding(end = 12.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
+            ) {
+                // Baris Atas: Artwork + Judul + Artis
                 Row(
-                    Modifier.align(Alignment.TopEnd),
-                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    DesktopArtwork(
+                        url = song?.thumbnailUrl,
+                        modifier = Modifier
+                            .size(38.dp)
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(Color(0xFF222226)),
+                        contentDescription = "Cover",
+                    )
+
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = song?.title ?: "Tidak ada lagu",
+                            color = Color.White,
+                            fontSize = 12.5.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(1.dp))
+                        Text(
+                            text = song?.artist ?: "BitChord Player",
+                            color = Color.White.copy(alpha = 0.65f),
+                            fontSize = 10.5.sp,
+                            fontWeight = FontWeight.Normal,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
+                }
+
+                Spacer(Modifier.height(6.dp))
+
+                // Baris Bawah: Kontrol Pemutar (Prev, Play/Pause/Stop, Next/Lanjut, Repeat)
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    // Style switch badge
-                    FloatingActionBadge(
-                        icon = Icons.Rounded.FormatPaint,
-                        tooltip = currentStyle.title,
-                        onClick = { DesktopFloatingLyricsManager.cycleStyle() },
+                    // Previous (Lagu Sebelumnya)
+                    IslandControlButton(
+                        icon = Icons.Rounded.FastRewind,
+                        tooltip = "Sebelumnya",
+                        size = 28.dp,
+                        iconSize = 16.dp,
+                        onClick = { DesktopFloatingLyricsManager.onPrevious?.invoke() },
                     )
-                    // Lock toggle
-                    FloatingActionBadge(
-                        icon = if (isLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
-                        tooltip = if (isLocked) "Terkunci" else "Bisa Digeser",
-                        tint = if (isLocked) Color(0xFFFFD54F) else Color.White,
-                        onClick = { DesktopFloatingLyricsManager.isLocked.value = !isLocked },
+
+                    // Play / Pause / Stop
+                    IslandControlButton(
+                        icon = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                        tooltip = if (isPlaying) "Jeda / Stop" else "Putar",
+                        size = 32.dp,
+                        iconSize = 20.dp,
+                        isPrimary = true,
+                        onClick = { DesktopFloatingLyricsManager.onPlayPause?.invoke() },
                     )
-                    // Close button
-                    FloatingActionBadge(
-                        icon = Icons.Rounded.Close,
-                        tooltip = "Tutup Lirik",
-                        hoverBg = Color(0xFFC42B1C),
-                        onClick = { DesktopFloatingLyricsManager.isEnabled.value = false },
+
+                    // Next (Lanjut)
+                    IslandControlButton(
+                        icon = Icons.Rounded.FastForward,
+                        tooltip = "Lanjut (Berikutnya)",
+                        size = 28.dp,
+                        iconSize = 16.dp,
+                        onClick = { DesktopFloatingLyricsManager.onNext?.invoke() },
+                    )
+
+                    // Repeat
+                    val isRepeatActive = repeatMode != DesktopRepeatMode.OFF
+                    IslandControlButton(
+                        icon = BitChordIcons.Repeat,
+                        tooltip = "Repeat: ${repeatMode.label()}",
+                        size = 28.dp,
+                        iconSize = 15.dp,
+                        tint = if (isRepeatActive) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.65f),
+                        badgeText = if (repeatMode == DesktopRepeatMode.ONE) "1" else null,
+                        onClick = { DesktopFloatingLyricsManager.onToggleRepeat?.invoke() },
                     )
                 }
             }
 
-            // Central Lyrics Area with Animated Transitions
-            Column(
-                Modifier.fillMaxSize(),
-                horizontalAlignment = Alignment.CenterHorizontally,
-                verticalArrangement = Arrangement.Center,
-            ) {
-                AnimatedContent(
-                    targetState = Pair(lyricText, activeIndex),
-                    transitionSpec = {
-                        val isEven = targetState.second % 2 == 0
-                        when (currentStyle) {
-                            FloatingLyricsStyle.PING_PONG -> {
-                                if (isEven) {
-                                    (slideInHorizontally(tween(350, easing = FastOutSlowInEasing)) { -it / 2 } + fadeIn())
-                                        .togetherWith(slideOutHorizontally(tween(300)) { it / 2 } + fadeOut())
-                                } else {
-                                    (slideInHorizontally(tween(350, easing = FastOutSlowInEasing)) { it / 2 } + fadeIn())
-                                        .togetherWith(slideOutHorizontally(tween(300)) { -it / 2 } + fadeOut())
-                                }
-                            }
-                            FloatingLyricsStyle.CAPSULE_POP -> {
-                                (slideInVertically(spring(dampingRatio = 0.7f, stiffness = 400f)) { -it / 2 } + fadeIn() + scaleIn(initialScale = 0.92f))
-                                    .togetherWith(slideOutVertically(tween(250)) { it / 3 } + fadeOut())
-                            }
-                            FloatingLyricsStyle.KARAOKE_SWEEP -> {
-                                (fadeIn(tween(300)) + slideInVertically(tween(300)) { it / 4 })
-                                    .togetherWith(fadeOut(tween(250)) + slideOutVertically(tween(250)) { -it / 4 })
-                            }
-                            FloatingLyricsStyle.AMBIENT_GHOST -> {
-                                (fadeIn(tween(400)) + slideInVertically(tween(400)) { 8 })
-                                    .togetherWith(fadeOut(tween(350)))
-                            }
-                        }
-                    },
-                ) { pair ->
-                    val textToRender = pair.first
-                    val isLyric = activeLine != null
+            // Divider Pemisah Vertikal
+            Box(
+                Modifier
+                    .width(1.dp)
+                    .height(64.dp)
+                    .background(Color.White.copy(alpha = 0.12f)),
+            )
 
+            // ==========================================
+            // BAGIAN KANAN: 3 Baris Lirik (Sebelum, Sekarang, Sesudah)
+            // ==========================================
+            Column(
+                Modifier
+                    .weight(1f)
+                    .padding(start = 14.dp, end = 6.dp),
+                verticalArrangement = Arrangement.SpaceEvenly,
+            ) {
+                // Baris 1: (Lirik Lagu Sebelum)
+                Text(
+                    text = prevLineText.ifBlank { " " },
+                    color = Color.White.copy(alpha = 0.38f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+
+                // Baris 2: (Lirik Lagu Sekarang - TEKS AKTIF MENYALA)
+                AnimatedContent(
+                    targetState = Pair(currentLineText, activeIndex),
+                    transitionSpec = {
+                        (slideInVertically(animationSpec = tween(280)) { it / 2 } + fadeIn(tween(280)))
+                            .togetherWith(slideOutVertically(animationSpec = tween(240)) { -it / 2 } + fadeOut(tween(240)))
+                    },
+                ) { target ->
                     Text(
-                        text = textToRender,
-                        fontSize = fontSize.sp,
-                        fontWeight = if (isLyric) FontWeight.Bold else FontWeight.SemiBold,
+                        text = target.first,
                         color = Color.White,
-                        textAlign = TextAlign.Center,
+                        fontSize = 14.5.sp,
+                        fontWeight = FontWeight.Bold,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,
-                        style = androidx.compose.ui.text.TextStyle(
+                        textAlign = TextAlign.Start,
+                        style = TextStyle(
                             shadow = Shadow(
-                                color = Color.Black.copy(alpha = 0.90f),
+                                color = Color.Black.copy(alpha = 0.95f),
                                 offset = Offset(0f, 2f),
-                                blurRadius = 8f,
+                                blurRadius = 7f,
                             ),
                         ),
+                        modifier = Modifier.fillMaxWidth(),
                     )
                 }
 
-                // Next lyric preview line (subtle)
-                if (nextLine != null && nextLine.text.isNotBlank() && currentStyle != FloatingLyricsStyle.AMBIENT_GHOST) {
-                    Spacer(Modifier.height(3.dp))
-                    Text(
-                        text = nextLine.text,
-                        fontSize = (fontSize - 7).coerceAtLeast(12).sp,
-                        fontWeight = FontWeight.Normal,
-                        color = Color.White.copy(alpha = 0.45f),
-                        textAlign = TextAlign.Center,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                }
+                // Baris 3: (Lirik Lagu Sesudah)
+                Text(
+                    text = nextLineText.ifBlank { " " },
+                    color = Color.White.copy(alpha = 0.38f),
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Normal,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Start,
+                    modifier = Modifier.fillMaxWidth(),
+                )
+            }
+        }
+
+        // Action Badges on Hover (Lock & Close)
+        if (isHovered || isLocked) {
+            Row(
+                Modifier
+                    .align(Alignment.TopEnd)
+                    .padding(top = 6.dp, end = 10.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                // Lock toggle
+                IslandHoverBadge(
+                    icon = if (isLocked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
+                    tooltip = if (isLocked) "Terkunci" else "Bisa Digeser",
+                    tint = if (isLocked) Color(0xFFFFD54F) else Color.White,
+                    onClick = { DesktopFloatingLyricsManager.isLocked.value = !isLocked },
+                )
+
+                // Close button
+                IslandHoverBadge(
+                    icon = Icons.Rounded.Close,
+                    tooltip = "Tutup Dynamic Island",
+                    hoverBg = Color(0xFFC42B1C),
+                    onClick = { DesktopFloatingLyricsManager.isEnabled.value = false },
+                )
             }
         }
     }
 }
 
 @Composable
-private fun FloatingActionBadge(
+private fun IslandControlButton(
     icon: ImageVector,
     tooltip: String,
+    size: androidx.compose.ui.unit.Dp,
+    iconSize: androidx.compose.ui.unit.Dp,
+    isPrimary: Boolean = false,
     tint: Color = Color.White,
-    hoverBg: Color = Color.White.copy(alpha = 0.18f),
+    badgeText: String? = null,
     onClick: () -> Unit,
 ) {
     val interaction = remember { MutableInteractionSource() }
     val isHovered by interaction.collectIsHoveredAsState()
-    val bg = if (isHovered) hoverBg else Color.Black.copy(alpha = 0.35f)
+
+    val bg = when {
+        isPrimary -> if (isHovered) Color(0xFFFFFFFF) else Color(0xEEFFFFFF)
+        isHovered -> Color.White.copy(alpha = 0.22f)
+        else -> Color.White.copy(alpha = 0.08f)
+    }
+    val iconColor = if (isPrimary) Color.Black else tint
 
     Box(
         Modifier
-            .size(24.dp)
+            .size(size)
             .clip(CircleShape)
             .background(bg)
             .hoverable(interaction)
@@ -352,6 +445,46 @@ private fun FloatingActionBadge(
             .clickable(onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Icon(icon, contentDescription = tooltip, tint = tint, modifier = Modifier.size(13.dp))
+        if (badgeText != null) {
+            Text(
+                text = badgeText,
+                color = tint,
+                fontSize = 11.sp,
+                fontWeight = FontWeight.Bold,
+            )
+        } else {
+            Icon(
+                imageVector = icon,
+                contentDescription = tooltip,
+                tint = iconColor,
+                modifier = Modifier.size(iconSize),
+            )
+        }
+    }
+}
+
+@Composable
+private fun IslandHoverBadge(
+    icon: ImageVector,
+    tooltip: String,
+    tint: Color = Color.White,
+    hoverBg: Color = Color.White.copy(alpha = 0.25f),
+    onClick: () -> Unit,
+) {
+    val interaction = remember { MutableInteractionSource() }
+    val isHovered by interaction.collectIsHoveredAsState()
+    val bg = if (isHovered) hoverBg else Color.Black.copy(alpha = 0.5f)
+
+    Box(
+        Modifier
+            .size(20.dp)
+            .clip(CircleShape)
+            .background(bg)
+            .hoverable(interaction)
+            .pointerHoverIcon(PointerIcon.Hand)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = tooltip, tint = tint, modifier = Modifier.size(11.dp))
     }
 }
