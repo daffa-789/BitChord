@@ -265,10 +265,20 @@ tidak ada fitur yang memang tidak pernah bisa aktif di mesin ini. Yang dibuang b
 - `:desktopApp:test` = **314 test, 0 gagal, 0 dilewati** (kesegaran laporan dibuktikan dari XML hasil).
 - `-Pbitchord.target=linux :desktopApp:compileKotlin` hijau → sisi Linux tetap terkompilasi.
 - `windowsPortableAssemble` hijau, `bitchord_window.dll` + `bitchord_smtc.dll` ikut terbungkus di dalam jar
-  resource; `packageMsi` (222 MB) dan `createDistributable` (image 312 MB) hijau.
+  resource; `packageMsi` (222 MB) dan `createDistributable` (image 312 MB) hijau. Ukuran portable `lib/`:
+  **310 MB → 191 MB (−38 %)**.
 - `BitChord.exe` dari image kemasan **dijalankan sungguhan**: sesi YouTube pulih, pustaka termuat
   (14 liked / 3 playlist / Podcasts=1), PoToken tercetak lewat WebView, InnerTubeX hangat 12,3 detik.
-- Ukuran portable `lib/`: **310 MB → 191 MB (−38 %)**.
+- `BitChord-1.8.31.exe` (233 MB), `BitChord-1.8.31.msi` (232 MB) dan
+  `BitChord-1.8.31-windows-portable.zip` (193 MB) dihasilkan dari build nyata dengan override
+  `-Pbitchord.version=1.8.31 -Pbitchord.build=31`, termasuk task `windowsPortable` yang bentuk zip-nya
+  belum pernah jalan sebelumnya; `buildSmtcNative` + `buildWindowNative` ikut terkompilasi.
+- Langkah-langkah `release.yml` diuji di sini (workflow-nya sendiri belum jalan di GitHub — lihat bawah):
+  YAML terparse dan graf job/output/nama artifact cocok; logika pemecah tag (`v1.8.29`, `v1.9`,
+  `v1.9.0-beta1` → benar; `1.8.29`, `weekly-3`, `v1.8.29x` → gagal dengan `::error::`); staging + hashing
+  dijalankan terhadap ketiga berkas asli, manifest-nya lolos `sha256sum -c` DAN lolos snippet PowerShell
+  yang dicetak di catatan rilis, dan berubah satu byte saja → `--check` gagal; gerbang native diuji tiga
+  jalur (jar asli → lolos, jar tanpa DLL dengan gate aktif → gagal, gate dimatikan → jalan terus).
 
 **Belum terbukti (jangan ditulis sebagai sudah):**
 
@@ -277,6 +287,9 @@ tidak ada fitur yang memang tidak pernah bisa aktif di mesin ini. Yang dibuang b
 - Tidak ada angka RAM/CPU sebelum vs sesudah pangkas.
 - `:shared:jvmTest` dan `:desktopUi:jvmTest` gagal di mode `--offline` karena artefak belum ada di
   `~/.gradle`: `mockwebserver:5.3.2` dan `kotlinx-datetime:0.6.0`. Butuh satu jalan dengan jaringan.
+- `release.yml` belum pernah berjalan di GitHub: image runner-nya (`windows-latest` + Choco/MinGW,
+  `ubuntu-latest` + `rpmbuild`) dan unduhan WiX/jlink di CI belum teruji. Langkah-langkah shell-nya sudah
+  (lihat di atas).
 
 ### Fase 8: Rilis, Pengukuran, dan Sisa yang Diketahui
 
@@ -285,18 +298,57 @@ yang tidak bisa diverifikasi di mesin ini ditulis apa adanya.
 
 **P1 — Rilis di GitHub (yang membuat "publish" berarti)**
 
-- [ ] Workflow `release.yml`: terpicu tag `v*`, dua job (`windows-latest` + `ubuntu-latest`) yang
-  menjalankan `packageMsi` + `windowsPortable` dan `packageDeb` + `packageRpm`, lalu unggah hasilnya ke
-  GitHub Release. Verifikasi: satu tag uji → keempat berkas muncul dan bisa diunduh.
-- [ ] Catatan rilis memuat SHA-256 tiap berkas dan commit yang menghasilkannya.
+- [x] Workflow `.github/workflows/release.yml`: terpicu tag `v*` (plus `workflow_dispatch` untuk
+  membangun ulang tag yang sudah ada atau membuat draft). Job `windows` menghasilkan MSI + Exe +
+  `windowsPortable`, job `linux` menghasilkan `.deb` + `.rpm`, lalu job `release` menggabungkannya
+  menjadi satu GitHub Release dengan `SHA256SUMS.txt`.
+- [x] Catatan rilis memuat SHA-256 tiap berkas (tabel ringkas + manifest lengkap terlampir) dan
+  commit yang menghasilkannya.
 - [ ] Pasang MSI di profil Windows baru (atau mesin lain): pastikan frame Fluent, tombol media SMTC,
   tray, dan sesi login hasil unduhan bekerja dari nol — bukan hanya dari image yang sudah ada.
+
+#### Cara merilis (yang dilakukan workflow)
+
+```bash
+git tag v1.8.30
+git push origin v1.8.30          # push tag = publish; tag tidak akan dibangun kalau tidak di-push
+```
+
+Aturan namanya: **tag dikurangi `v` di depan = versi aplikasi**, dan angka patch-nya sekalian jadi
+*version code* desktop (`desktopVersionCode` di `desktopApp/build.gradle.kts`, sekarang bisa
+di-override dengan `-Pbitchord.build`), jadi paket Windows dinamai mengikuti tag: `-Pbitchord.version=1.8.31
+-Pbitchord.build=31` menghasilkan `BitChord-1.8.31.msi` dan `BitChord-1.8.31.exe` (dibuktikan di mesin ini),
+plus `BitChord-1.8.31-windows-portable.zip`. Tag dua angka (`v1.9`) memakai version code bawaan (29) supaya
+installer yang sudah terpasang tetap mengenali upgrade. Berkas `.deb`/`.rpm` dinamai oleh Compose sendiri —
+workflow menyalin seluruh folder `main/deb` dan `main/rpm`, jadi tidak ada nama yang ditebak di YAML.
+
+Yang dijaga workflow, bukan cuma dijalankan:
+
+- **Alat native Windows wajib ada.** Langkah toolchain memasang `cmake`/`ninja`/`mingw` lewat Choco
+  kalau image belum punya, lalu satu langkah memeriksa isi `desktopApp.jar`: kalau
+  `native/bitchord_window.dll` atau `native/bitchord_smtc.dll` tidak ikut terbungkus, build **gagal**
+  dengan pesan yang menjelaskan caranya (opsi `require_windows_natives` dimatikan) daripada rilis diam-diam
+  tanpa frame Fluent atau tombol media.
+- **Manifest SHA-256 ditulis dalam format `sha256sum`** (`<hash>  <nama berkas>`, LF, bukan CRLF) sehingga
+  `sha256sum -c SHA256SUMS.txt` berlaku di Linux/macOS/Git Bash dan `Get-FileHash` di Windows. Job `release`
+  menjalankan `sha256sum --check` terhadap manifest yang digabung — berkas yang rusak atau ketuker bikin
+  rilis gagal, bukan lolos.
+- **Catatan rilis dibangun dari berkas yang benar-benar ada di `dist/`**, jadi tidak mungkin teks menjanjikan
+  paket yang tidak ikut terunggah (`fail_on_unmatched_files: true`).
+- **`packageRpm` butuh `rpmbuild`**, yang tidak ada di image Ubuntu — workflow memasang paket `rpm` lebih dulu.
+- **Kunci API Last.fm sengaja TIDAK ditanam** di rilis publik: `localProperty("LASTFM_API_KEY")` akan
+  menuliskannya apa adanya ke launcher, dan launcher itu diunduh orang. Build tanpa kunci tetap bisa
+  scrobbling — halaman Settings meminta kunci milik sendiri (`DesktopScrobbling.hasBuiltInLastFmKey`).
+
+Cara mengujinya tanpa push tag: jalankan workflow ini dari tab Actions dengan `tag` + `as_draft: true`,
+baca catatan rilisnya, lalu publish atau buang draft-nya.
 
 **P2 — Linux jangan berhenti di "terkompilasi"**
 
 - [ ] Jalankan `:desktopApp:run` di Linux sungguhan (satu GNOME, satu non-GNOME mis. KDE/XFCE). Yang belum
   teruji: dekorasi jendela, tray StatusNotifier, MPRIS (`playerctl`), dan pemantau output ALSA.
-- [ ] Buat `.deb`/`.rpm` di runner Linux, catat ukurannya, dan bandingkan dengan angka Windows di atas.
+- [ ] `.deb`/`.rpm` sudah ada jalurnya di `release.yml` (job `linux` di `ubuntu-latest`), tapi belum pernah
+  benar-benar diproduksi: jalankan satu rilis uji, catat ukurannya, dan bandingkan dengan angka Windows.
 
 **P3 — Ukur, jangan dikira**
 

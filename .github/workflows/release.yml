@@ -1,0 +1,344 @@
+name: Release
+
+# A tag is the release. Pushing `v1.8.29` builds Windows + Linux packages and publishes them with a
+# SHA-256 manifest. `workflow_dispatch` rebuilds a tag that already exists — after a runner hiccup, or
+# as a draft to read the notes before publishing.
+#
+# Version rule: the tag without its leading `v` is the app version, and its patch component doubles as
+# the desktop version code (`desktopVersionCode` in desktopApp/build.gradle.kts), so the installer's
+# numeric version matches the tag it was cut from.
+
+on:
+  push:
+    tags:
+      - 'v*'
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Tag to release, e.g. v1.8.29'
+        required: true
+        type: string
+      as_draft:
+        description: 'Create the Release as a draft instead of publishing it'
+        required: false
+        type: boolean
+        default: false
+      require_windows_natives:
+        description: 'Fail if the Fluent frame / SMTC DLLs were not compiled into the Windows build'
+        required: false
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  meta:
+    name: Resolve the tag
+    runs-on: ubuntu-latest
+    outputs:
+      tag: ${{ steps.split.outputs.tag }}
+      version: ${{ steps.split.outputs.version }}
+      build: ${{ steps.split.outputs.build }}
+      sha: ${{ steps.checkout.outputs.commit }}
+      prerelease: ${{ steps.split.outputs.prerelease }}
+    steps:
+      # Checking the tag out here means a dispatch naming a tag that does not exist fails on the first
+      # job instead of producing packages nobody asked for.
+      - id: checkout
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag || github.ref_name }}
+
+      - id: split
+        env:
+          REF: ${{ inputs.tag || github.ref_name }}
+        run: |
+          set -euo pipefail
+          tag="${REF}"
+          if [[ ! "$tag" =~ ^v[0-9]+(\.[0-9]+)+(-[0-9A-Za-z.]+)?$ ]]; then
+            echo "::error::Release tags must look like v1.8.29 or v1.9.0-beta1 (got '${tag}')."
+            exit 1
+          fi
+          version="${tag#v}"
+          core="${version%%-*}"
+          IFS='.' read -r major minor patch <<< "$core"
+          # A two-part tag keeps the version code the build script ships with, so the installer still
+          # recognises an upgrade of it.
+          build="${patch:-29}"
+          if [[ ! "$build" =~ ^[0-9]+$ ]]; then
+            echo "::error::The patch component of '${version}' must be a number: it is the installer version code."
+            exit 1
+          fi
+          prerelease=false
+          if [[ "$version" == *-* ]]; then
+            prerelease=true
+          fi
+          {
+            echo "tag=${tag}"
+            echo "version=${version}"
+            echo "build=${build}"
+            echo "prerelease=${prerelease}"
+          } >> "$GITHUB_OUTPUT"
+          echo "tag=${tag} version=${version} build=${build} prerelease=${prerelease}"
+
+  windows:
+    name: Windows packages
+    needs: meta
+    runs-on: windows-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # cmake, Ninja and a MinGW C++ compiler produce bitchord_window.dll (Fluent caption + DWM backdrop)
+      # and bitchord_smtc.dll (media keys). Locally those are optional — the Gradle build skips them with
+      # a log line — but a release is what people install, so the next steps insist on them.
+      - name: Ensure the native toolchain
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          foreach ($tool in 'cmake', 'ninja', 'g++') {
+            if (-not (Get-Command $tool -ErrorAction SilentlyContinue)) {
+              $package = if ($tool -eq 'g++') { 'mingw' } else { $tool }
+              choco install --no-progress -y $package
+            }
+          }
+          # Choco installs into directories that join PATH machine-wide; this process has the old copy.
+          $env:Path = [Environment]::GetEnvironmentVariable('Path', 'Machine') + ';' +
+            [Environment]::GetEnvironmentVariable('Path', 'User')
+          cmake --version | Select-Object -First 1
+          ninja --version
+          g++ --version | Select-Object -First 1
+
+      - name: Package installers and the portable archive
+        run: >
+          .\gradlew.bat :desktopApp:packageMsi :desktopApp:packageExe :desktopApp:windowsPortable
+          -Pbitchord.version=${{ needs.meta.outputs.version }}
+          -Pbitchord.build=${{ needs.meta.outputs.build }}
+
+      # "It built" is not "it ships what makes it feel native". The DLLs reach every package as
+      # resources/native/* inside the app jar, so that jar is what gets read.
+      - name: Verify the native Windows integrations are inside the build
+        shell: pwsh
+        env:
+          # A tag push has no inputs at all, so comparing against false is what keeps the default —
+          # insist on the DLLs — in force there.
+          REQUIRE_NATIVES: ${{ inputs.require_windows_natives != false }}
+        run: |
+          $ErrorActionPreference = 'Stop'
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $jar = Join-Path $env:GITHUB_WORKSPACE 'desktopApp/build/libs/desktopApp.jar'
+          $archive = [System.IO.Compression.ZipFile]::OpenRead($jar)
+          try { $names = @($archive.Entries | ForEach-Object { $_.FullName }) }
+          finally { $archive.Dispose() }
+          $missing = @('bitchord_window.dll', 'bitchord_smtc.dll') |
+            Where-Object { $names -notcontains "native/$_" }
+          if ($missing.Count -eq 0) {
+            Write-Host 'Native Windows integrations present: Fluent frame, SMTC media keys.'
+            exit 0
+          }
+          Write-Host "::error::the app jar is missing $($missing -join ', ') - this build would ship without the Fluent window frame and/or Windows media keys."
+          if ($env:REQUIRE_NATIVES -eq 'true') {
+            Write-Host 'Run Release from the Actions tab with require_windows_natives off to publish anyway, or fix the toolchain step above.'
+            exit 1
+          }
+          Write-Host 'Continuing because require_windows_natives was switched off.'
+
+      - name: Stage the artefacts
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp desktopApp/build/compose/binaries/main/msi/* dist/
+          cp desktopApp/build/compose/binaries/main/exe/* dist/
+          cp desktopApp/build/distributions/BitChord-*-windows-portable.zip dist/
+          ls -l dist
+
+      # The manifest uses sha256sum's own format ("<hash>  <name>") and LF endings, so `sha256sum -c`
+      # verifies it on Linux and macOS as well as Get-FileHash on Windows. Set-Content would have written
+      # CRLF, and the stray \r then reads as part of the file name.
+      - name: Hash what ships
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $sums = Get-ChildItem dist -File |
+            Where-Object { $_.Name -notlike 'SHA256SUMS*' } |
+            ForEach-Object {
+              $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $_.FullName).Hash.ToLowerInvariant()
+              "$($hash)  $($_.Name)"
+            }
+          $path = (Resolve-Path dist).Path + '/SHA256SUMS.windows.txt'
+          [IO.File]::WriteAllText($path, (($sums -join "`n") + "`n"))
+          Get-Content -LiteralPath $path
+
+      - name: Upload Windows artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-windows
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+  linux:
+    name: Linux packages
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # packageRpm shells out to rpmbuild, which the Ubuntu image does not carry.
+      - name: Install the RPM packager
+        run: sudo apt-get update --quiet && sudo apt-get install -y --no-install-recommends rpm
+
+      - name: Package .deb and .rpm
+        run: >
+          ./gradlew :desktopApp:packageDeb :desktopApp:packageRpm
+          -Pbitchord.version=${{ needs.meta.outputs.version }}
+          -Pbitchord.build=${{ needs.meta.outputs.build }}
+
+      - name: Stage the artefacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp desktopApp/build/compose/binaries/main/deb/* dist/
+          cp desktopApp/build/compose/binaries/main/rpm/* dist/
+          ls -l dist
+
+      - name: Hash what ships
+        run: |
+          set -euo pipefail
+          cd dist
+          # Formatted here rather than passed through from sha256sum, whose default mode is binary on
+          # some builds ("<hash> *<name>") — the manifest has to read identically to the Windows one.
+          find . -maxdepth 1 -type f ! -name 'SHA256SUMS*' -printf '%P\n' | sort |
+            while IFS= read -r file; do
+              printf '%s  %s\n' "$(sha256sum -- "$file" | cut -d' ' -f1)" "$file"
+            done > SHA256SUMS.linux.txt
+          cat SHA256SUMS.linux.txt
+
+      - name: Upload Linux artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-linux
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+  release:
+    name: Publish
+    needs: [meta, windows, linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: 'dist-*'
+          merge-multiple: true
+          path: dist
+
+      - name: Merge and re-check the manifests
+        run: |
+          set -euo pipefail
+          cd dist
+          sort -u SHA256SUMS.windows.txt SHA256SUMS.linux.txt > SHA256SUMS.txt
+          rm SHA256SUMS.windows.txt SHA256SUMS.linux.txt
+          sha256sum --check SHA256SUMS.txt
+          ls -l
+
+      # Built from the staged files, so the notes cannot describe a package that is not in the release.
+      - name: Build the release notes
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+          COMMIT: ${{ needs.meta.outputs.sha }}
+          PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+        run: |
+          set -euo pipefail
+          cd dist
+          {
+            echo "BitChord ${VERSION} for desktop: Windows and Linux. Built by this workflow run from \`${COMMIT:0:10}\`."
+            echo
+            if [ "$PRERELEASE" = "true" ]; then
+              echo "> [!NOTE]"
+              echo "> A pre-release: expect rough edges, and please report what breaks."
+              echo
+            fi
+            echo '| File | Size | SHA-256 |'
+            echo '| --- | --- | --- |'
+            while read -r hash name; do
+              size=$(du -h --apparent-size "$name" | cut -f1)
+              echo "| [\`${name}\`](./${name}) | ${size} | \`${hash:0:16}\`… |"
+            done < SHA256SUMS.txt
+            echo
+            echo 'Full hashes are in the attached [`SHA256SUMS.txt`](./SHA256SUMS.txt).'
+            echo
+            echo '## Which one to take'
+            echo
+            echo '- **Windows** — `BitChord-*.msi` for a per-user installer (no admin needed);'
+            echo '  `BitChord-*.exe` is the same installer as a single file; `*-windows-portable.zip`'
+            echo '  installs nothing but expects a Java 21+ runtime on `PATH` or in `JAVA_HOME`.'
+            echo '- **Linux** — `*.deb` for Debian/Ubuntu/SteamOS, `*.rpm` for Fedora/openSUSE/RHEL.'
+            echo
+            echo '## Verifying the download'
+            echo
+            echo 'Put `SHA256SUMS.txt` in the folder holding the files you downloaded, then:'
+            echo
+            echo '```bash'
+            echo 'sha256sum -c SHA256SUMS.txt        # Linux, macOS, Git Bash'
+            echo '```'
+            echo
+            echo '```powershell'
+            echo '# Windows'
+            echo 'Get-Content SHA256SUMS.txt | ForEach-Object {'
+            echo '  $h, $n = $_ -split "\s+", 2'
+            echo '  "{0}: {1}" -f $n, ((Get-FileHash -Algorithm SHA256 $n).Hash.ToLower() -eq $h)'
+            echo '}'
+            echo '```'
+            echo
+            echo '## Notes'
+            echo
+            echo '- The Windows packages carry the Fluent window frame and SMTC media keys.'
+            echo '- Sign in through the in-app WebView, or import the session from Chrome/Edge/Brave/Firefox.'
+            echo '- Last.fm scrobbling works, but a public build deliberately ships no bundled API key: the'
+            echo '  Settings page asks for your own Last.fm key and secret. Those belong in your install, not'
+            echo '  in a downloadable archive.'
+          } > /tmp/RELEASE_NOTES.md
+          cat /tmp/RELEASE_NOTES.md
+
+      - uses: softprops/action-gh-release@v3
+        with:
+          tag_name: ${{ needs.meta.outputs.tag }}
+          target_commitish: ${{ needs.meta.outputs.sha }}
+          name: BitChord ${{ needs.meta.outputs.version }}
+          body_path: /tmp/RELEASE_NOTES.md
+          files: dist/*
+          draft: ${{ inputs.as_draft == true }}
+          prerelease: ${{ needs.meta.outputs.prerelease == 'true' }}
+          overwrite_files: true
+          fail_on_unmatched_files: true

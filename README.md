@@ -96,9 +96,11 @@
 
 This tree is the desktop client only: the Compose Desktop app, built on the JVM. It runs on
 Windows 11 (Fluent window frame, Dynamic Island lyrics, SMTC media keys) and on Linux (MPRIS
-media controls and the StatusNotifier tray). Prebuilt installers for the upstream project live in
-the [Releases](https://github.com/kushagrasinghx/BitChord/releases) page; this fork is built from
-source:
+media controls and the StatusNotifier tray). Installers for **this** fork appear on the Releases
+page of this repository, published by the `Release` workflow whenever a `v*` tag is pushed — each
+release carries a `SHA256SUMS.txt` manifest next to the files. Prebuilt installers for the upstream
+project live in the [Releases](https://github.com/kushagrasinghx/BitChord/releases) page; building
+from source is one clone away:
 
 ```bash
 # JDK 21 (Temurin) is required and must be what JAVA_HOME points at.
@@ -130,6 +132,25 @@ Artifacts from a current build on this repo, for reference:
 | `.../binaries/main/app/BitChord/` (jlink app image) | 312 MB |
 | `windowsPortable` `lib/` directory | 191 MB (was 310 MB before the trim) |
 
+**Publishing** — a tag is the release: `git tag v1.8.30 && git push origin v1.8.30` runs
+[`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the Windows MSI, Exe and
+portable zip on a Windows runner, the `.deb` and `.rpm` on a Linux runner, and publishes all of it as one
+GitHub Release with a `SHA256SUMS.txt` manifest. The tag's patch number becomes the installer version code,
+so the package the release ships is named after the tag. Check a download before you install it:
+
+```bash
+sha256sum -c SHA256SUMS.txt          # Linux, macOS, Git Bash
+```
+
+```powershell
+Get-Content SHA256SUMS.txt | ForEach-Object {
+  $h, $n = $_ -split '\s+', 2
+  '{0}: {1}' -f $n, ((Get-FileHash -Algorithm SHA256 $n).Hash.ToLower() -eq $h)
+}
+```
+
+Public releases deliberately ship no bundled Last.fm API key — a build that baked one in would write it in
+plain text into the launcher everyone downloads. Scrobbling still works: Settings asks for your own key.
 
 </div>
 

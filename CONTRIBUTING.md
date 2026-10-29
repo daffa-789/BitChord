@@ -67,6 +67,20 @@ run there is not a CI failure.
   in the same commit: `README.md`, this file, `ADDITIONAL.md`, `docs/`, and the phase plan in
   `PLAN_WINDOWS.md`. A document that describes a removed feature is a bug.
 
+## Releasing
+A `v*` tag is the release: pushing one runs `.github/workflows/release.yml`, which packages Windows
+(MSI, Exe, portable zip) and Linux (`.deb`, `.rpm`) in parallel and publishes one GitHub Release with a
+`SHA256SUMS.txt` manifest. Rules worth knowing before you cut one:
+
+- The tag without its leading `v` is the app version, and its patch number is also the desktop version
+  code (`-Pbitchord.build`), so `v1.8.30` produces `BitChord-1.8.30.*`. Cut a new tag rather than moving
+  one that has already been published.
+- The workflow fails rather than shipping a Windows build whose Fluent frame or SMTC DLLs did not compile
+  (`require_windows_natives` is the documented override) and re-checks every hash before publishing.
+- Do not put API credentials into a release build. `LASTFM_API_KEY` / `LASTFM_SECRET` reach the launcher as
+  plain text, and the launcher is downloaded by strangers.
+- Testing a release without publishing it: run the workflow from the Actions tab with `as_draft: true`.
+
 ## Audio Changes and Telemetry
 For audio changes: application telemetry must not be presented as proof of physical hardware behavior unless that hardware behavior was actually verified.
 
