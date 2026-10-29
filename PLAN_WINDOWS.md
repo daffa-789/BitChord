@@ -182,7 +182,12 @@ flowchart TD
   di katalog Inggris dan Indonesia.
 - [x] Label island sudah diterjemahkan: 48 kunci `d_island_*` ada di `desktop-en.xml` **dan**
   `desktop-id.xml`, dan uji katalog memastikan tidak ada kunci desktop yang hilang di bahasa lain.
-- [ ] Paketkan menjadi installer Windows (`.msi` / executable mandiri) via Gradle task `packageMsi` / `packageDistributionForCurrentOS`. Tugas `windowsPortable` sudah terverifikasi menghasilkan folder berjalan dengan native Windows di dalam jar.
+- [x] Kemasan Windows terverifikasi di mesin ini: `packageMsi` menghasilkan
+  `desktopApp/build/compose/binaries/main/msi/BitChord-1.8.29.msi` (222 MB) dan `createDistributable`
+  menghasilkan image aplikasi 312 MB. `BitChord.exe` dari image itu dijalankan dan menyala penuh:
+  pustaka termuat, InnerTubeX hangat dalam 12,3 detik, dan PoToken tercetak lewat WebView — artinya
+  runtime jlink hasil pangkasan (tanpa `java.scripting`/`jdk.dynalink`) cukup untuk aplikasi asli,
+  bukan hanya mode dev.
 
 ### Fase 7: Optimasi & Pemangkasan Fitur (Klien Windows Saja)
 
