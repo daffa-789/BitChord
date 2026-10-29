@@ -745,7 +745,6 @@
     <string name="start_radio">Mulai radio</string>
     <string name="playing_radio">Memutar Radio %1$s</string>
     <string name="playing_from">Memutar dari %1$s</string>
-    <string name="played_by">Diputar oleh %1$s</string>
     <string name="shared_link">Tautan dibagikan</string>
     <string name="radio_started">Radio %1$s dimulai</string>
     <string name="scrobble_primary_artist_only">Hanya scrobble artis utama</string>

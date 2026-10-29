@@ -133,52 +133,6 @@ private const val SHUFFLE_TAP_WINDOW_MS = 400L
  */
 private const val AUTOPLAY_TAP_WINDOW_MS = 700L
 
-/**
- * "Playing from …", "Played by …" or the radio station — what the player is
- * playing *out of*, in the words the caption uses.
- */
-@Composable
-internal fun playbackOriginText(song: Song, playedBy: String?): String =
-    playedBy?.let {
-        stringResource(Res.string.played_by, it)
-    } ?: song.radioName?.let {
-        stringResource(Res.string.playing_radio, it)
-    } ?: stringResource(
-        Res.string.playing_from,
-        song.playbackSource ?: song.albumName ?: stringResource(Res.string.queue),
-    )
-
-/**
- * The small caption naming what the player is playing out of — see
- * [playbackOriginText]. Tappable, back to that place.
- */
-@Composable
-internal fun PlaybackOriginCaption(
-    text: String,
-    onClick: () -> Unit,
-    textAlign: TextAlign,
-    /** Inside the touch target, so it widens what a finger can hit. */
-    contentPadding: PaddingValues,
-    modifier: Modifier = Modifier,
-) {
-    Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall.copy(
-            shadow = Shadow(
-                color = Color.Black.copy(alpha = 0.55f),
-                offset = Offset(0f, 1f),
-                blurRadius = 4f,
-            ),
-        ),
-        color = LocalPlayerTint.current,
-        maxLines = 1,
-        overflow = TextOverflow.Ellipsis,
-        textAlign = textAlign,
-        modifier = modifier
-            .clickable(onClick = onClick)
-            .padding(contentPadding),
-    )
-}
 
 /**
  * The seek bar, with elapsed and remaining either side under it and
