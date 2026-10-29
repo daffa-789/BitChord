@@ -54,8 +54,7 @@ plugins {
 }
 
 dependencies {
-    // Already on the classpath through the NewPipe extractor.
-    implementation("org.jsoup:jsoup:1.22.2")
+    // jsoup comes in through the NewPipe extractor, as on Android.
 
     implementation(project(":shared"))
     // Its own copy of the player and pages; the phone and TV keep :sharedUi.
@@ -102,8 +101,7 @@ dependencies {
     implementation("io.ktor:ktor-client-core:3.0.3")
     implementation("io.ktor:ktor-client-cio:3.0.3")
     implementation("io.ktor:ktor-client-content-negotiation:3.0.3")
-    // The Discord gateway speaks over a WebSocket; ktor already carries it.
-    implementation("io.ktor:ktor-client-websockets:3.0.3")
+    // WebSockets arrive with :shared, whose Discord gateway exports the engine.
     implementation("io.ktor:ktor-serialization-kotlinx-json:3.0.3")
     implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:1.9.0")
