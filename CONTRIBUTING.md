@@ -53,8 +53,9 @@ Tests:
 ```
 
 Two suites need a cached dependency that is not always available offline — `:shared:jvmTest` wants `mockwebserver` and `:desktopUi:jvmTest` wants `kotlinx-datetime`. Run them without
-`--offline` once so Gradle can fetch them; CI only compiles, so a red local suite there is not a
-CI failure.
+`--offline` once so Gradle can fetch them. CI (`.github/workflows/check.yml`) compiles the desktop app
+for Windows and for Linux and runs `:desktopApp:test`; it does not run those two suites, so a red local
+run there is not a CI failure.
 
 ## Code Quality
 - Follow idiomatic Kotlin and Jetpack Compose conventions.
@@ -62,6 +63,9 @@ CI failure.
 - Write unit tests for new logic, fixes, and edge cases.
 - Contributors should run relevant tests, must not introduce new failures, and should document known pre-existing failures when applicable.
 - Keep diffs focused and minimal. Avoid unnecessary third-party dependencies.
+- When a change alters what the app does, ships, or requires to build, update the documents that say so
+  in the same commit: `README.md`, this file, `ADDITIONAL.md`, `docs/`, and the phase plan in
+  `PLAN_WINDOWS.md`. A document that describes a removed feature is a bug.
 
 ## Audio Changes and Telemetry
 For audio changes: application telemetry must not be presented as proof of physical hardware behavior unless that hardware behavior was actually verified.

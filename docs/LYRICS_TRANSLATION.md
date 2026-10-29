@@ -14,7 +14,7 @@ change the crossfade, playback transitions, source replacement or audio processi
 
 1. Open the full lyrics view.
 2. Tap the translation button beside the source credit.
-3. BitChord resolves the active application locale and requests a translation.
+3. BitChord resolves the destination language and requests a translation.
 4. If the detected source language matches the app language, the original lyrics
    remain visible and BitChord explains that no translation is needed.
 5. Otherwise, the translated text appears with a short particle transition.
@@ -27,11 +27,11 @@ not switch the strip back to the source language.
 
 ## Destination language
 
-The destination comes from
-`AppCompatDelegate.getApplicationLocales()`, which is the language explicitly
-selected in BitChord's language dialog. When the application locale list is
-empty, BitChord follows Android's effective configuration locale, matching the
-app's normal “follow system” behaviour.
+On desktop the destination is the **Translation language** row in Settings
+(`DesktopTranslationSetting`): a language tag the user picks. When that row is left
+blank the destination follows the language BitChord itself is writing in —
+`DesktopStrings.resolvedTag()`, which lands the stored or system language on the
+catalogues this build offers, and the row reads "… · follows the app".
 
 The translation therefore follows the language shown by BitChord, not an
 unrelated device default. Language tags are normalized to their base language,
@@ -104,7 +104,8 @@ No language packs or ML translation models are downloaded.
 Translated text uses a two-level cache:
 
 - 12 entries in memory for instant toggling and recently played songs;
-- GZIP-compressed JSON files in Android's reclaimable `cacheDir`;
+- GZIP-compressed JSON files in the media cache directory
+  (`DesktopMediaCache`, handed to `LyricsTranslation.cacheDir` at startup);
 - a hard 2 MiB disk limit, trimmed least-recently-used first;
 - SHA-256 keys derived from track, destination language and source lyrics;
 - a cache format version so incompatible entries are ignored safely.

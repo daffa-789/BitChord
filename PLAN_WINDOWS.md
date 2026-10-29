@@ -1,6 +1,12 @@
-# Blueprint & Rencana Eksekusi: BitChord Windows Edition & Floating Desktop Lyrics
+# Blueprint & Rencana Eksekusi: BitChord Desktop (Windows + Linux) & Floating Desktop Lyrics
 
-Dokumen ini adalah rencana acuan utama (*single source of truth*) untuk membangun, menyesuaikan, dan memodernisasi klien musik BitChord khusus untuk sistem operasi **Windows 11**. Fokus utama proyek ini adalah mengembalikan versi desktop, membuang elemen antarmuka macOS, mengintegrasikan kontrol jendela native Windows 11, serta menambahkan fitur **Floating Desktop Lyrics (Lirik Mengambang / Pop-up)** yang ramah produktivitas (*multitasking-friendly*).
+Dokumen ini adalah rencana acuan utama (*single source of truth*) untuk membangun, menyesuaikan, dan
+memodernisasi klien musik BitChord untuk desktop. Fokus awalnya adalah **Windows 11**: mengembalikan
+versi desktop, membuang elemen antarmuka macOS, mengintegrasikan kontrol jendela native Windows 11,
+dan menambahkan fitur **Floating Desktop Lyrics (Lirik Mengambang / Dynamic Island)** yang ramah
+produktivitas (*multitasking-friendly*). Sejak Fase 7 target resminya adalah **Windows + Linux** —
+kode Linux (MPRIS, StatusNotifier, pemantau audio ALSA) sengaja dipertahankan dan dijaga tetap
+terkompilasi oleh CI — dan iOS/Android/macOS tidak masuk daftar.
 
 ---
 
@@ -102,6 +108,12 @@ if (isFloatingLyricsEnabled) {
    - Pergantian lirik menggunakan *smooth vertical float* (naik 8px) + *crossfade*.
    - Dilengkapi toggle *Click-Through* (Win32 `WS_EX_TRANSPARENT`) agar klik mouse tembus ke aplikasi di bawahnya.
 
+> **Catatan hasil akhir (Fase 4/5):** yang benar-benar dibangun bukan empat preset gaya, melainkan
+> **Dynamic Island** dengan tiga layout (Full / Compact / Mini) dan lirik bergulir tiga baris — tanpa
+> animasi warna karaoke, meniru lembar lirik di layar Now Playing. Satu janji yang belum diwujudkan
+> adalah toggle *Click-Through* (`WS_EX_TRANSPARENT`); ia dipindah ke Fase 8 karena butuh JNI tambahan
+> dan bukan jalur kritis.
+
 ---
 
 ## 5. Roadmap & Tahapan Eksekusi
@@ -111,7 +123,10 @@ flowchart TD
     Fase1["Fase 1: Setup Lingkungan (JDK 21 & Restore Modul)"] --> Fase2["Fase 2: Windows 11 Native Frame & Test Run"]
     Fase2 --> Fase3["Fase 3: Jendela Floating Lyrics & State Binding"]
     Fase3 --> Fase4["Fase 4: 4 Gaya Animasi & Click-Through"]
-    Fase4 --> Fase5["Fase 5: Mini-Player, Tray Icon & Packaging"]
+    Fase4 --> Fase5["Fase 5: Menu Dynamic Island & Polish"]
+    Fase5 --> Fase6["Fase 6: Tray, Terjemahan & Kemasan"]
+    Fase6 --> Fase7["Fase 7: Optimasi & Pemangkasan (Windows + Linux saja)"]
+    Fase7 --> Fase8["Fase 8: Rilis, CI & Ukur (rencana berikut)"]
 ```
 
 ### Rincian Checklist:
@@ -175,7 +190,7 @@ flowchart TD
 - [x] `DesktopAwtTray.kt` aktif — ikon dan tray Windows dipasang lewat `DesktopStatusNotifier`
   (`setIcon`/`start`/`update`/`stop`), bersama toggle "ikon tray" dan "tetap putar saat ditutup" di
   Settings.
-- [ ] Tambahkan toggle *Click-Through Mode* (`WS_EX_TRANSPARENT`) via JNI jika diinginkan.
+- [ ] Tambahkan toggle *Click-Through Mode* (`WS_EX_TRANSPARENT`) via JNI — dijadwalkan ulang ke Fase 8.
 - [x] Entri "Dynamic Island" di menu tray — memanggil `DesktopFloatingLyricsManager.toggle()`, sama
   seperti pintasan <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd>. Menu-nya satu definisi untuk tray AWT
   Windows dan StatusNotifier Linux (`DesktopTrayMenu.entries()`), labelnya dari kunci `d_island_tray`
@@ -189,7 +204,7 @@ flowchart TD
   runtime jlink hasil pangkasan (tanpa `java.scripting`/`jdk.dynalink`) cukup untuk aplikasi asli,
   bukan hanya mode dev.
 
-### Fase 7: Optimasi & Pemangkasan Fitur (Klien Windows Saja)
+### Fase 7: Optimasi & Pemangkasan Fitur (Klien Windows + Linux Saja)
 
 Tujuan: aplikasi ringan — lebih kecil paketnya, lebih sedikit yang jalan di latar belakang, dan
 tidak ada fitur yang memang tidak pernah bisa aktif di mesin ini. Yang dibuang beserta alasannya:
@@ -203,9 +218,14 @@ tidak ada fitur yang memang tidak pernah bisa aktif di mesin ini. Yang dibuang b
     manual 0–12 detik dan "Crossfade saat skip" tetap ada**, lengkap dengan penanda di scrubber.
   - Penggantinya: satu loader native umum `DesktopNativeRuntime.kt` (dipakai frame Windows + SMTC),
     dan proyek CMake SMTC dipisah (`desktopApp/native/smtc/`) supaya tombol media Windows tidak ikut hilang.
-- [ ] **Modul JS (GraalVM)** — `polyglot` + `js-language` + `truffle` + ICU bawaan ≈ **61 MB**, hanya dipakai
+- [x] **Modul JS (GraalVM)** — `polyglot` + `js-language` + `truffle` + ICU bawaan ≈ **61 MB**, hanya dipakai
   host plugin yang tidak punya UI instal; indeks modul upstream sudah 404 dan preferensi
-  `MODULE_INDEX_URL` tidak pernah dibaca kode.
+  `MODULE_INDEX_URL` tidak pernah dibaca kode. Host plugin, pengunduh indeks, dan deklarasi Gradle-nya
+  sudah dihapus: `grep -riE "graal|polyglot|truffle"` di seluruh sumber (di luar folder `build/`) tidak
+  lagi menghasilkan apa pun, dan pemetaan kualitas sumber yang dulu hidup di host itu dipindah ke
+  `DesktopSourceQuality.kt` supaya jalur addon (FLAC/Hi-Res lewat HTTP biasa) tetap utuh. Preferensi
+  lama `module_index_url` kini hanya dibersihkan sekali saat muat (`DesktopPersistence`), tidak dibaca
+  untuk apa pun.
 - [x] **Listen Together / PartySync / QR** — butuh server pihak ketiga yang tidak pernah diisi
   (tombolnya tetap muncul, tapi gagal dengan "Set the party server address first"). Yang dibuang:
   mesin party (`DesktopListenTogether`, `DesktopPartySync`, dialog + UI-nya, QR undangan dan `zxing`),
@@ -221,10 +241,90 @@ tidak ada fitur yang memang tidak pernah bisa aktif di mesin ini. Yang dibuang b
   listener Dock di `DesktopWindowVisibility.install()`, serta cabang `macos` di skrip Gradle
   (classifier JavaCPP/JavaFX/Skiko, `TargetFormat.Dmg`/`Pkg`, dan blok `macOS {}`).
   Perilaku Windows dan Linux tidak diubah: Windows tetap menggambar kapas sendiri lewat
-  `WindowsCaptionButtons`, dan Linux memakai Decoration Window Manager-nya.
+  `WindowsCaptionButtons`, dan Linux memakai dekorasi dari window manager-nya sendiri.
 - [x] **Kode Linux dipertahankan** — MPRIS, StatusNotifier, `dbus-java` dan pemantau audio ALSA
   sengaja TIDAK dihapus: target repo ini Windows + Linux, dan job `desktop-linux` di CI menjaganya
   tetap terkompilasi.
-- [ ] **Sumber JioSaavn dipertahankan** — sempat masuk daftar buang karena ikut balapan resolusi di
-  setiap lagu; ditahan karena ia sumber lossy 320kbps yang benar-benar dipakai.
+- [x] **Sumber JioSaavn dipertahankan** — sempat masuk daftar buang karena ikut balapan resolusi di
+  setiap lagu; ditahan karena ia sumber lossy 320kbps yang benar-benar dipakai. Keputusan: **tidak
+  dibuang**, dan ia tetap punya tempat sendiri di tangga mutu (`HIGH` = JioSaavn 320kbps, YouTube sebagai
+  fallback).
+- [x] **Sapuan akhir** — impor mati dan kunci katalog yang tidak dirujuk apa pun dibuang: 989 baris
+  kunci/elemen hilang dari enam katalog bahasa dalam satu commit sapuan (`strings/en.xml` 57,9 KB → 18,9 KB,
+  `strings/id.xml` 45,6 KB → 19,5 KB), dan direktori `strings/` turun dari 152 KB ke 72 KB. Sebagian kunci
+  sudah dibuang lebih awal bersama fiturnya (kunci `listen_together_*`, kunci "Played by"). Degradasi
+  preferensi sumber dibuat per-entry: satu entri yang tidak lagi dikenal build ini dikeluarkan dan dicatat
+  ke log ("left out N stored source(s) this build no longer offers"), bukan membuat seluruh daftar sumber
+  gagal dimuat.
+
+#### Rekap status verifikasi (akhir Fase 7)
+
+**Terbukti jalan di mesin ini:**
+
+- `:desktopUi:compileKotlinJvm`, `:desktopApp:compileKotlin`, `:desktopApp:compileTestKotlin` hijau.
+- `:desktopApp:test` = **314 test, 0 gagal, 0 dilewati** (kesegaran laporan dibuktikan dari XML hasil).
+- `-Pbitchord.target=linux :desktopApp:compileKotlin` hijau → sisi Linux tetap terkompilasi.
+- `windowsPortableAssemble` hijau, `bitchord_window.dll` + `bitchord_smtc.dll` ikut terbungkus di dalam jar
+  resource; `packageMsi` (222 MB) dan `createDistributable` (image 312 MB) hijau.
+- `BitChord.exe` dari image kemasan **dijalankan sungguhan**: sesi YouTube pulih, pustaka termuat
+  (14 liked / 3 playlist / Podcasts=1), PoToken tercetak lewat WebView, InnerTubeX hangat 12,3 detik.
+- Ukuran portable `lib/`: **310 MB → 191 MB (−38 %)**.
+
+**Belum terbukti (jangan ditulis sebagai sudah):**
+
+- MSI belum pernah dipasang di mesin bersih; yang diuji adalah image aplikasi hasil `createDistributable`.
+- Aplikasi belum pernah dijalankan di Linux sungguhan — yang terbukti hanya terkompilasi untuk target Linux.
+- Tidak ada angka RAM/CPU sebelum vs sesudah pangkas.
+- `:shared:jvmTest` dan `:desktopUi:jvmTest` gagal di mode `--offline` karena artefak belum ada di
+  `~/.gradle`: `mockwebserver:5.3.2` dan `kotlinx-datetime:0.6.0`. Butuh satu jalan dengan jaringan.
+
+### Fase 8: Rilis, Pengukuran, dan Sisa yang Diketahui
+
+Rencana berikutnya, berurutan dari yang paling menentukan. Setiap butir punya cara verifikasinya sendiri —
+yang tidak bisa diverifikasi di mesin ini ditulis apa adanya.
+
+**P1 — Rilis di GitHub (yang membuat "publish" berarti)**
+
+- [ ] Workflow `release.yml`: terpicu tag `v*`, dua job (`windows-latest` + `ubuntu-latest`) yang
+  menjalankan `packageMsi` + `windowsPortable` dan `packageDeb` + `packageRpm`, lalu unggah hasilnya ke
+  GitHub Release. Verifikasi: satu tag uji → keempat berkas muncul dan bisa diunduh.
+- [ ] Catatan rilis memuat SHA-256 tiap berkas dan commit yang menghasilkannya.
+- [ ] Pasang MSI di profil Windows baru (atau mesin lain): pastikan frame Fluent, tombol media SMTC,
+  tray, dan sesi login hasil unduhan bekerja dari nol — bukan hanya dari image yang sudah ada.
+
+**P2 — Linux jangan berhenti di "terkompilasi"**
+
+- [ ] Jalankan `:desktopApp:run` di Linux sungguhan (satu GNOME, satu non-GNOME mis. KDE/XFCE). Yang belum
+  teruji: dekorasi jendela, tray StatusNotifier, MPRIS (`playerctl`), dan pemantau output ALSA.
+- [ ] Buat `.deb`/`.rpm` di runner Linux, catat ukurannya, dan bandingkan dengan angka Windows di atas.
+
+**P3 — Ukur, jangan dikira**
+
+- [ ] RAM dan CPU selama 10 menit playback: idle, seek, dan island aktif. Alat: `Get-Counter`/Task Manager
+  (Windows), `pidstat` (Linux). Angka ditulis di dokumen ini, bukan di commit saja.
+- [ ] Cold start `BitChord.exe` → jendela pertama. Yang ada sekarang baru angka hangat (InnerTubeX 12,3 s).
+
+**P4 — Sisa yang dijanjikan tapi belum dibuat**
+
+- [ ] Toggle *Click-Through* (`WS_EX_TRANSPARENT`) di menu island dan halaman Settings. Jendela island sudah
+  `focusable = false` (tidak merebut fokus) dan bertipe `UTILITY` (tidak masuk Alt-Tab), tapi klik masih
+  tertahan di kapsul. Verifikasi: dengan toggle aktif, klik di atas kapsul tembus ke jendela di bawahnya;
+  dengan toggle mati, kapsul masih bisa digeser.
+
+**P5 — Yang aman dikerjakan sekarang**
+
+- [ ] Sekali dengan jaringan: `./gradlew :shared:jvmTest :desktopUi:jvmTest` (dua-duanya butuh unduhan kecil
+  yang disebut di rekap). Kalau hijau, tambahkan keduanya ke job `desktop` di CI.
+- [ ] Tambah `:desktopUi:compileKotlinJvm` di CI supaya modul UI bersama ikut terjaga.
+- [ ] Teruskan aturan: dokumen (README, CONTRIBUTING, ADDITIONAL, docs/, halaman ini) diubah di commit yang
+  sama dengan perubahan perilaku — jangan menyusul nanti.
+
+**P6 — Menjaga fork tetap nyambung dengan upstream**
+
+- [ ] Putuskan strategi sync: remote `upstream` + merge terjadwal per rilis besar, dan tetap **satu branch
+  `main`** (`git pull upstream/main` sebelum mulai; `origin/main` tidak pernah ditimpa; push tetap dilakukan
+  manusia).
+- [ ] Sebelum membuang fitur lagi: cek dulu ia muncul di UI atau tidak. Kebijakan repo ini **buang yang
+  terbukti mati saja** — fitur yang terlihat di layar dipertahankan kecuali ada bukti ia tidak pernah bisa
+  aktif (contoh yang ditahan: JioSaavn; contoh yang dibuang: Listen Together).
 

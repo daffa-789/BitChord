@@ -9,17 +9,18 @@
 
 ### Aesthetic YouTube Music Client
 
+**This tree is the desktop client — Windows and Linux.** [What this fork changes](#this-fork).
+
 <br/>
 
 [![License: GPL-3.0](https://img.shields.io/badge/license-GPL--3.0-green?style=for-the-badge&labelColor=0d1117)](LICENSE)
 
 <br/>
 
-[**Build from source**](#download) · [**Features**](#features) · [**Contributing**](#contributing) · [**Support**](#support) · [**Disclaimer**](#disclaimer)
+[**Build from source**](#download) · [**Features**](#features) · [**This fork**](#this-fork) · [**Contributing**](#contributing) · [**Support**](#support) · [**Disclaimer**](#disclaimer)
 
 <br/>
 
-<a href="https://fmhy.net/mobile#youtube-music" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/available/fmhy/cozy.svg" alt="Featured on FMHY" height="55"/></a>
 <a href="https://trendshift.io/repositories/177639?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-177639" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/177639/daily?language=Kotlin" alt="kushagrasinghx%2FBitChord | Trendshift" width="250" height="55"/></a>
 <a href="https://trendshift.io/repositories/177639?utm_source=trendshift-badge&utm_medium=badge&utm_campaign=badge-trendshift-177639" target="_blank" rel="noopener noreferrer"><img src="https://trendshift.io/api/badge/trendshift/repositories/177639/weekly?language=Kotlin" alt="kushagrasinghx%2FBitChord | Trendshift" width="250" height="55"/></a>
 
@@ -65,10 +66,16 @@
 - **Lyrics providers** — credit to [lrc.red](https://lrc.red), [BiniLyrics](https://github.com/binimum), [BetterLyrics](https://github.com/better-lyrics/better-lyrics), [PaxSenix](https://lyrics.paxsenix.org), [LyricsPlus](https://github.com/ibratabian17/YouLyPlus), [SimpMusic](https://github.com/maxrave-dev/SimpMusic), [Unison](https://unison.boidu.dev), [Megalobiz](https://www.megalobiz.com), [KuGou](https://www.kugou.com), [LRCLIB](https://lrclib.net), [Musixmatch](https://www.musixmatch.com) and [Genius](https://genius.com).
 - **Dynamic, artwork-driven theming** — Material palette extracted from album art.
 - **Frosted-glass UI** — Telegram-style translucent bars via Haze, Material 3 theming.
+- **Dynamic Island lyrics** — a 660×104 capsule on its own frameless, transparent, always-on-top
+  window: three rolling lyric lines, cover art and transport controls, out of the taskbar and Alt-Tab,
+  and it never steals focus from what you are typing into. Three layouts (Full / Compact / Mini), six
+  anchors, size and opacity sliders, drag-to-position, and a toggle in the system tray. The main window
+  is separate: on Windows it draws its own Fluent caption with a DWM backdrop, on Linux the window
+  manager decorates it.
 
 #### Controls & Tweaks
 - **Audio quality ceiling** — pick where on the ladder a track starts, from ~64 kbps up to bit-exact lossless.
-- **Playback speed control** (0.5×–2.0×) and **skip silence**.
+- **Playback speed control** (0.25×–3.0×) and **skip silence**.
 - **Sleep timer** — fixed presets or "stop after this track".
 - **System equalizer** integration.
 - **Stats for nerds** — codec, bit depth, sample rate, and more on the now-playing screen.
@@ -94,20 +101,75 @@ the [Releases](https://github.com/kushagrasinghx/BitChord/releases) page; this f
 source:
 
 ```bash
-# JDK 21 (Temurin) is required; point org.gradle.java.home at it in gradle.properties.
+# JDK 21 (Temurin) is required and must be what JAVA_HOME points at.
+# gradle.properties deliberately does NOT pin org.gradle.java.home — that path only exists on one
+# machine, and pinning it breaks the build everywhere else.
 ./gradlew :desktopApp:run                  # run it
-./gradlew :desktopApp:packageMsi           # Windows installer
+./gradlew :desktopApp:packageExe           # Windows single-file installer
+./gradlew :desktopApp:packageMsi           # Windows MSI installer
 ./gradlew :desktopApp:windowsPortable      # Windows portable zip, no installer needed
 
 # on Linux
 ./gradlew :desktopApp:packageDeb
+./gradlew :desktopApp:packageRpm
 ```
+
+`-Pbitchord.target=linux` picks the Linux native dependencies (FFmpeg/Skiko/JavaFX classifiers)
+and the Linux runtime modules, so the Linux side can be assembled and checked from Windows; CI
+additionally compiles the same sources natively on `ubuntu-latest` (the `desktop-linux` job), and the
+`.deb` / `.rpm` are produced there.
 
 On Windows, `cmake`, `Ninja` and a MinGW C++ compiler on `PATH` add the native window frame and
 SMTC media keys; without them the app still builds and runs, just without those two.
 
+Artifacts from a current build on this repo, for reference:
+
+| Output | Size |
+| --- | --- |
+| `desktopApp/build/compose/binaries/main/msi/BitChord-1.8.29.msi` | 222 MB |
+| `.../binaries/main/app/BitChord/` (jlink app image) | 312 MB |
+| `windowsPortable` `lib/` directory | 191 MB (was 310 MB before the trim) |
+
 
 </div>
+
+---
+
+<div align="center">
+
+<h1><a id="this-fork"></a>What this fork changes</h1>
+
+</div>
+
+Two decisions shape this tree: it ships on **Windows and Linux desktop only**, and it is trimmed to be
+a light player rather than everything a phone client can do.
+
+**Out, and why**
+
+| Removed | Why |
+| --- | --- |
+| Automix / DJ transitions | `onnxruntime` (51.9 MB), two ONNX models (13.5 MB), the C++ analyser and ~2,500 lines of Kotlin, plus background inference on every track. Manual crossfade (0–12 s) and blend-on-skip stayed. |
+| GraalVM JS module host | `polyglot` + `js-language` + `truffle` + ICU ≈ 61 MB for a plugin index that has no install UI, whose upstream URL 404s and whose preference nothing in the code read. Addon servers still give FLAC/Hi-Res over plain HTTP. |
+| Listen Together / PartySync / QR invite | Needed a third-party server nobody ever filled in; the button only ever produced "Set the party server address first". |
+| Presence telemetry | A "the app is open" ping to the upstream server every ~5 minutes, with no switch in Settings. |
+| macOS code paths | Not a target of this tree: Mac frame (550 lines of JNA), traffic-light caption buttons, Dock listener, and the `macos` branches in the Gradle build. |
+| Android / iOS | Android lives upstream. iOS would mean rewriting the AWT + JNA + FFmpeg + WASAPI layer against AVFoundation and UIKit, and streaming YouTube Music outside Google's own app is not something Apple's terms allow. |
+
+**In, and what it costs**
+
+- Windows Fluent caption and DWM backdrop (`bitchord_window.dll`), SMTC media keys (`bitchord_smtc.dll`), both built with CMake + Ninja + MinGW when present.
+- Dynamic Island lyrics overlay, its settings page, and a tray entry that toggles it on both platforms.
+- One native loader (`DesktopNativeRuntime`) shared by the window frame and SMTC, and a portable zip
+  task (`windowsPortable`) for machines where an installer is not wanted.
+- CI that compiles the Linux sources as well, so the MPRIS / StatusNotifier / ALSA side cannot drift
+  out of build (the Linux code itself is deliberately kept).
+
+**Measured effect** — the portable `lib/` went from 310 MB to 191 MB (−38 %), the string catalogues
+from 152 KB to 72 KB after deleting the keys nothing referenced, and `:desktopApp:test` runs 314
+tests green. The packaged `BitChord.exe` was launched on this machine to prove the trimmed jlink
+runtime is enough for the real app, not just for `:desktopApp:run`.
+
+The working plan, phase by phase, is in [PLAN_WINDOWS.md](PLAN_WINDOWS.md).
 
 ---
 
