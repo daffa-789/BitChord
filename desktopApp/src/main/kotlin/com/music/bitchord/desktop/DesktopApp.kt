@@ -48,7 +48,6 @@ import com.music.bitchord.ui.player.NowPlayingScreen
 import com.music.bitchord.ui.player.QueueSidePanel
 import com.music.bitchord.ui.player.PlayerBack
 import com.music.bitchord.ui.player.RepeatModes
-import com.music.bitchord.ui.player.rememberMixPulse
 import androidx.compose.runtime.SideEffect
 import com.music.bitchord.data.model.QueueTier
 import androidx.compose.animation.AnimatedVisibility
@@ -305,10 +304,7 @@ import com.music.bitchord.data.spotify.SpotifyLibrary
 import com.music.bitchord.sharedui.resources.Res as SharedRes
 import com.music.bitchord.sharedui.resources.spotify_logo
 import com.music.bitchord.data.model.withoutRepeatsOf
-import com.music.bitchord.data.settings.AutomixPerformanceMode
 import com.music.bitchord.data.settings.LastPlayerScreen
-import com.music.bitchord.data.settings.SmartAnalysis
-import com.music.bitchord.data.settings.TrackAnalysisState
 import com.music.bitchord.data.settings.TransitionWindow
 import com.music.bitchord.ui.icons.BitChordIcons
 import dev.chrisbanes.haze.HazeState
@@ -423,7 +419,7 @@ private const val SCROBBLE_THRESHOLD_MS = 180_000L
 /** Used for tracking restart of the current song when previous button is pressed. */
 private const val BACK_RESTARTS_AFTER_MS = 10_000L
 
-/** How long a manual skip takes to blend into the next track when Automix on skip is on. */
+/** How long a manual skip takes to blend into the next track when crossfade-on-skip is on. */
 private const val SKIP_MIX_ON_SKIP_SECONDS = 15
 
 /** How long the supplier waits for the server to echo an AutoPlay queue addition. */
@@ -637,19 +633,9 @@ fun BitChordDesktopApp() {
     // than once per recomposition.
     var autoplaySeed by remember { mutableStateOf<String?>(null) }
     var autoplayJob by remember { mutableStateOf<Job?>(null) }
-    var automix by remember { mutableStateOf(persistence.boolean("automix", false)) }
-    // A manual skip blends into the already-prepared next track over ~15s instead of cutting.
-    var automixOnSkip by remember { mutableStateOf(persistence.boolean("automix_on_skip", false)) }
-    // Apple-style Automix phrase length in bars: 0 = adaptive (default), 8 or 16 = fixed.
-    var automixPhraseBars by remember {
-        mutableStateOf(persistence.string("automix_phrase_bars", "0").toIntOrNull()?.let { if (it == 8 || it == 16) it else 0 } ?: 0)
-    }
-    var automixPerformance by remember {
-        mutableStateOf(
-            runCatching { AutomixPerformanceMode.valueOf(persistence.string("automix_performance", "BALANCED")) }
-                .getOrDefault(AutomixPerformanceMode.BALANCED),
-        )
-    }
+    // A manual skip blends into the already-prepared next track instead of cutting. Kunci
+    // preferensinya tetap "automix_on_skip" supaya pilihan yang sudah tersimpan tidak hilang.
+    var crossfadeOnSkip by remember { mutableStateOf(persistence.boolean("automix_on_skip", false)) }
     var shuffle by remember { mutableStateOf(persistence.boolean("shuffle", false)) }
     var repeatMode by remember {
         mutableStateOf(
@@ -1362,11 +1348,11 @@ fun BitChordDesktopApp() {
 
     fun playNext() {
         if (DesktopListenTogether.state.value.controlsLocked) return
-        // Automix on skip: when enabled and the next deck is already prepared, blend into it over a
-        // short crossfade instead of cutting. The blend's own hand-off advances the queue, so a
+        // Crossfade on skip: when enabled and the next deck is already prepared, blend into it over
+        // a short crossfade instead of cutting. The blend's own hand-off advances the queue, so a
         // successful mix returns here without touching liveQueue; anything else falls through to the
         // ordinary skip below.
-        if (automixOnSkip && repeatMode != DesktopRepeatMode.ONE) {
+        if (crossfadeOnSkip && repeatMode != DesktopRepeatMode.ONE) {
             val currentId = selectedSong?.videoId
             val upcoming = currentId?.let {
                 liveQueue.followingFor(it, repeatAll = repeatMode == DesktopRepeatMode.ALL)
@@ -1729,9 +1715,6 @@ fun BitChordDesktopApp() {
     LaunchedEffect(playbackSpeed) { playbackEngine.setPlaybackSpeed(playbackSpeed) }
     LaunchedEffect(volume) { playbackEngine.setVolume(volume) }
     LaunchedEffect(audioQuality) { playbackEngine.setAudioQuality(audioQuality.name) }
-    LaunchedEffect(automixPerformance) {
-        playbackEngine.setAutomixPerformance(automixPerformance)
-    }
     // Every one of the seven settings renders the same curve, so they are collected together
     // rather than destructured — seven sources of one tuning is seven chances to read them in the
     // wrong order.
@@ -1755,12 +1738,10 @@ fun BitChordDesktopApp() {
     // the next song at a different moment and be dragged back by a correcting seek. The transition a
     // party shares is the plain one. The settings themselves are left alone and come back after.
     val inParty = partyState.inParty
-    LaunchedEffect(automix, automixOnSkip, automixPhraseBars, crossfadeSeconds, inParty, audioQuality, selectedSong?.videoId, queue, liveQueue.index, shuffle, repeatMode) {
-        playbackEngine.setAutomixEnabled(automix && !inParty)
-        playbackEngine.setAutomixPhraseBars(if (automix && !inParty) automixPhraseBars else 0)
+    LaunchedEffect(crossfadeOnSkip, crossfadeSeconds, inParty, audioQuality, selectedSong?.videoId, queue, liveQueue.index, shuffle, repeatMode) {
         playbackEngine.setCrossfadeSeconds(if (inParty) 0 else crossfadeSeconds)
         // A party mixes only with the plain transition, so a skip there cuts like it always did.
-        playbackEngine.setSkipMixEnabled(automixOnSkip && !inParty)
+        playbackEngine.setSkipMixEnabled(crossfadeOnSkip && !inParty)
         // Exactly what Next would play, so a crossfade can never blend into anything else. Shuffle
         // is already the queue's order; picking "the first track that is not this one" under it
         // blended into a song from history whenever the current one was not at the top.
@@ -2585,8 +2566,6 @@ fun BitChordDesktopApp() {
     }
 
     LaunchedEffect(Unit) {
-        // Unpacks the analyser and its models on first run.
-        DesktopAnalysisRuntime.ensureStarted()
         DesktopHorizontalScroll.install()
         localSongs = withContext(Dispatchers.IO) { DesktopLocalMusic.scan() }
         // A download record is a claim about a folder this app does not own, so it can outlive the
@@ -3015,10 +2994,8 @@ fun BitChordDesktopApp() {
         DesktopPlayerSettings.lyricsBlur.value = lyricsBlur
         DesktopPlayerSettings.syncedLyrics.value = syncedLyrics
         DesktopPlayerSettings.showNerdStats.value = showNerdStats
-        DesktopPlayerSettings.smartFadeEnabled.value = automix
-        DesktopPlayerSettings.smartAnalysis.value = playback.smartAnalysis
-        DesktopPlayerSettings.smartMixInProgress.value = playback.mixing
-        DesktopPlayerSettings.smartTransitionWindow.value = playback.transitionWindow
+        DesktopPlayerSettings.mixInProgress.value = playback.mixing
+        DesktopPlayerSettings.transitionWindow.value = playback.transitionWindow
         DesktopPlayerSettings.lyricsSourceOrder.value =
             DesktopLyricsClient.enabledSources(lyricsOrder, lyricsOn).mapNotNull(::lyricsSourceNamed)
         DesktopPlayerHost.volumeLevel.value = volume
@@ -3812,25 +3789,10 @@ fun BitChordDesktopApp() {
                                     listState = settingsListState,
                                     autoplay = autoplay,
                                     onAutoplayChange = ::setAutoplay,
-                                    automix = automix,
-                                    onAutomixChange = {
-                                        automix = it
-                                        persistence.saveBoolean("automix", it)
-                                    },
-                                    automixOnSkip = automixOnSkip,
-                                    onAutomixOnSkipChange = {
-                                        automixOnSkip = it
+                                    crossfadeOnSkip = crossfadeOnSkip,
+                                    onCrossfadeOnSkipChange = {
+                                        crossfadeOnSkip = it
                                         persistence.saveBoolean("automix_on_skip", it)
-                                    },
-                                    automixPerformance = automixPerformance,
-                                    onAutomixPerformanceChange = {
-                                        automixPerformance = it
-                                        persistence.saveString("automix_performance", it.name)
-                                    },
-                                    automixPhraseBars = automixPhraseBars,
-                                    onAutomixPhraseBarsChange = {
-                                        automixPhraseBars = it
-                                        persistence.saveString("automix_phrase_bars", it.toString())
                                     },
                                     shuffle = shuffle,
                                     onShuffleChange = ::setShuffle,
@@ -4429,11 +4391,6 @@ private fun DesktopTopBar(
 ) {
     val titleBarEnabled by DesktopTitleBarSetting.enabled.collectAsState()
     val inlineCaption = DesktopPlatform.drawsOwnWindowFrame && !titleBarEnabled
-    // The same claim the player's scrubber runs through an Automix blend, but breathing slowly and
-    // gently rather than strobing on the beat — the desktop's calm reading of a mix.
-    val mixBlend = DesktopPlayerSettings.smartMixBlend.collectAsState()
-    val reduceAnimation by DesktopPlayerSettings.reduceAnimation.collectAsState()
-    val mixPulse = rememberMixPulse({ mixBlend.value }, enabled = !reduceAnimation, slow = true)
     val currentProgress by rememberUpdatedState(progress)
 
     // Apple Music uses one calm strip for both player controls and window furniture. The left
@@ -5838,15 +5795,9 @@ private fun DesktopSettingsScreen(
     listState: LazyListState,
     autoplay: Boolean,
     onAutoplayChange: (Boolean) -> Unit,
-    automix: Boolean,
-    onAutomixChange: (Boolean) -> Unit,
-    automixOnSkip: Boolean,
-    onAutomixOnSkipChange: (Boolean) -> Unit,
-    automixPerformance: AutomixPerformanceMode,
-    onAutomixPerformanceChange: (AutomixPerformanceMode) -> Unit,
-    /** Apple-style Automix phrase length in bars: 0 = adaptive, 8 or 16 = fixed. */
-    automixPhraseBars: Int,
-    onAutomixPhraseBarsChange: (Int) -> Unit,
+    /** Blend into the next track when the listener skips, instead of cutting. */
+    crossfadeOnSkip: Boolean,
+    onCrossfadeOnSkipChange: (Boolean) -> Unit,
     shuffle: Boolean,
     onShuffleChange: (Boolean) -> Unit,
     repeatMode: DesktopRepeatMode,
@@ -5954,8 +5905,7 @@ private fun DesktopSettingsScreen(
             DesktopSettingsSection.entries.forEach { section ->
             if (section == DesktopSettingsSection.PLAYBACK) item {
                     SettingsGroup(DesktopStrings["playback", "Playback"]) {
-                    if (!automix) {
-                        if (settingsRowVisible(DesktopStrings["crossfade", "Crossfade"])) {
+                    if (settingsRowVisible(DesktopStrings["crossfade", "Crossfade"])) {
                         Column(Modifier.fillMaxWidth().padding(vertical = 10.dp)) {
                             Text(DesktopStrings["crossfade", "Crossfade"], style = MaterialTheme.typography.bodyLarge)
                             Text(
@@ -5970,86 +5920,16 @@ private fun DesktopSettingsScreen(
                                 steps = 11,
                             )
                         }
-                        }
                     }
                     SettingsToggle(
-                        DesktopStrings["automix", "Automix"],
-                        if (automix) {
-                            "Calculates timing and blends transitions from the tracks"
-                        } else {
-                            "Automatically calculates transition timing without a slider"
-                        },
-                        automix,
-                        onAutomixChange,
-                    )
-                    SettingsToggle(
-                        DesktopStrings["automix_on_skip", "Automix on skip"],
+                        DesktopStrings["d_crossfade_on_skip", "Crossfade on skip"],
                         DesktopStrings[
                             "automix_on_skip_subtitle",
                             "When you skip ahead, mix into the next song over ~15s instead of cutting",
                         ],
-                        automixOnSkip,
-                        onAutomixOnSkipChange,
+                        crossfadeOnSkip,
+                        onCrossfadeOnSkipChange,
                     )
-                    if (automix) {
-                        val phraseTitle = DesktopStrings["automix_phrase_length", "Automix phrase length"]
-                        val phraseSubtitle =
-                            DesktopStrings["automix_phrase_length_subtitle", "Blend over a fixed number of bars, beat-aligned"]
-                        if (settingsRowVisible(phraseTitle, phraseSubtitle)) {
-                            Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-                                Text(phraseTitle, fontWeight = FontWeight.Medium)
-                                Text(
-                                    phraseSubtitle,
-                                    color = DesktopSecondary,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                                Spacer(Modifier.height(10.dp))
-                                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                    listOf(0, 8, 16).forEach { bars ->
-                                        FilterChip(
-                                            colors = desktopChipColors(),
-                                            selected = automixPhraseBars == bars,
-                                            onClick = { onAutomixPhraseBarsChange(bars) },
-                                            label = { Text(phraseBarsLabel(bars)) },
-                                        )
-                                    }
-                                }
-                                Spacer(Modifier.height(8.dp))
-                                Text(
-                                    phraseBarsDetail(automixPhraseBars),
-                                    color = DesktopSecondary,
-                                    style = MaterialTheme.typography.bodySmall,
-                                )
-                            }
-                        }
-                    }
-                    if (settingsRowVisible(DesktopStrings["automix_performance", "Automix performance"], DesktopStrings["automix_performance_subtitle", "Sets how much CPU background analysis may use"])) {
-                        Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
-                            Text(DesktopStrings["automix_performance", "Automix performance"], fontWeight = FontWeight.Medium)
-                            Text(
-                                DesktopStrings["automix_performance_subtitle", "Sets how much CPU background analysis may use"],
-                                color = DesktopSecondary,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                            Spacer(Modifier.height(10.dp))
-                            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                                AutomixPerformanceMode.entries.forEach { mode ->
-                                    FilterChip(
-                                        colors = desktopChipColors(),
-                                        selected = automixPerformance == mode,
-                                        onClick = { onAutomixPerformanceChange(mode) },
-                                        label = { Text(mode.label()) },
-                                    )
-                                }
-                            }
-                            Spacer(Modifier.height(8.dp))
-                            Text(
-                                automixPerformance.detail(),
-                                color = DesktopSecondary,
-                                style = MaterialTheme.typography.bodySmall,
-                            )
-                        }
-                    }
                     val eqOn by DesktopEqualizerSettings.enabled.collectAsState()
                     SettingsToggle(
                         DesktopStrings["skip_silence", "Skip silence"],
@@ -7463,54 +7343,6 @@ private fun DesktopChromeEdge.dissolve(colour: Color, fade: Float): Brush? {
     } else {
         Brush.horizontalGradient(*stops)
     }
-}
-
-private fun AutomixPerformanceMode.label(): String = when (this) {
-    AutomixPerformanceMode.EFFICIENT -> "Efficient"
-    AutomixPerformanceMode.BALANCED -> "Balanced"
-    AutomixPerformanceMode.PERFORMANCE -> "Performance"
-}
-
-/** Android's description of each rung. */
-private fun AutomixPerformanceMode.detail(): String = when (this) {
-    AutomixPerformanceMode.EFFICIENT ->
-        "1 thread · lowest heat and battery use · analysis may take longer"
-    AutomixPerformanceMode.BALANCED ->
-        "2 threads · recommended balance of speed, heat and battery"
-    AutomixPerformanceMode.PERFORMANCE ->
-        "4 threads · fastest analysis · higher heat and battery use"
-}
-
-/** Chip label for an Apple-style Automix phrase length, in bars; 0 is the adaptive default. */
-private fun phraseBarsLabel(bars: Int): String = when (bars) {
-    8 -> DesktopStrings["automix_phrase_8", "8 bars"]
-    16 -> DesktopStrings["automix_phrase_16", "16 bars"]
-    else -> DesktopStrings["automix_phrase_auto", "Auto"]
-}
-
-/** What the selected phrase length does, shown under the chips. */
-private fun phraseBarsDetail(bars: Int): String = when (bars) {
-    8 -> DesktopStrings[
-        "automix_phrase_8_detail",
-        "Mixes over exactly 8 bars, both edges on the beat grid",
-    ]
-    16 -> DesktopStrings[
-        "automix_phrase_16_detail",
-        "Mixes over exactly 16 bars, both edges on the beat grid",
-    ]
-    else -> DesktopStrings[
-        "automix_phrase_auto_detail",
-        "Chooses each transition's length from the two tracks",
-    ]
-}
-
-/** Android's wording for the Automix line, so both players read alike. */
-private fun TrackAnalysisState.label(): String = when (this) {
-    TrackAnalysisState.ANALYSED -> "analysed"
-    TrackAnalysisState.REFINING -> "analysed, refining…"
-    TrackAnalysisState.ANALYSING -> "analysing…"
-    TrackAnalysisState.WAITING -> "waiting"
-    TrackAnalysisState.FAILED -> "failed"
 }
 
 @Composable

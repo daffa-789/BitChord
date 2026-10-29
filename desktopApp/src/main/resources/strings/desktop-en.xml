@@ -106,6 +106,7 @@
     <string name="d_island_hide_paused">Hide while paused</string>
     <string name="d_island_hide_paused_subtitle">Takes the capsule off the page whenever playback is paused</string>
     <string name="d_island_layout">Layout</string>
+    <string name="d_crossfade_on_skip">Crossfade on skip</string>
     <string name="d_island_layout_compact">Compact</string>
     <string name="d_island_layout_compact_subtitle">The line being sung, a cover and play/pause</string>
     <string name="d_island_layout_full">Full</string>

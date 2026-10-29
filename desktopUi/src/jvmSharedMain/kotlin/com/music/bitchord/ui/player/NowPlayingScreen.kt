@@ -844,7 +844,7 @@ fun NowPlayingScreen(
     // CanvasRepository, which is also where the "is this actually the right
     // track" check lives.
     val spotifyCanvasAutoHide by PlayerSettings.spotifyCanvasAutoHide.collectAsStateWithLifecycle()
-    val mixing by PlayerSettings.smartMixInProgress.collectAsStateWithLifecycle()
+    val mixing by PlayerSettings.mixInProgress.collectAsStateWithLifecycle()
     val canvas = rememberCanvasArtwork(song)
     var canvasAspect by remember(canvas) { mutableFloatStateOf(0f) }
     // Whether the clip actually has a frame on screen right now, and one of
@@ -1891,7 +1891,7 @@ fun NowPlayingScreen(
                 label = "landscapeArtworkScale",
             )
             val versionAligning by PlayerSettings.versionAlignmentInProgress.collectAsStateWithLifecycle()
-            val transitionWindow by PlayerSettings.smartTransitionWindow.collectAsStateWithLifecycle()
+            val transitionWindow by PlayerSettings.transitionWindow.collectAsStateWithLifecycle()
             val panelOpen = lyricsOpen || queueOpen
 
             // Where the sleeve is drawn this frame on its way to or from the mini
@@ -2085,7 +2085,6 @@ fun NowPlayingScreen(
                                     mixing = mixing && !scrub.scrubbing,
                                     // The phone's landscape deck pulses on the beat; the desktop player
                                     // breathes slowly and gently through a mix.
-                                    slowMixPulse = !compact,
                                     transitionWindow = transitionWindow
                                         ?.takeIf { !scrub.scrubbing && it.end > it.start }
                                         ?.let { it.start..it.end },
@@ -3739,7 +3738,7 @@ fun NowPlayingScreen(
                                 .padding(vertical = 4.dp),
                         )
                     }
-                    val transitionWindow by PlayerSettings.smartTransitionWindow.collectAsStateWithLifecycle()
+                    val transitionWindow by PlayerSettings.transitionWindow.collectAsStateWithLifecycle()
                     PlayerScrubber(
                         shown = shown,
                         durationMs = durationMs,

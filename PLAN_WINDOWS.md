@@ -177,3 +177,27 @@ flowchart TD
 - [ ] Tambahkan entri "Dynamic Island" di menu tray.
 - [ ] Terjemahkan label menu/settings island ke katalog `desktop-id.xml` (sekarang masih Inggris, sama seperti fallback bahasa lain).
 - [ ] Paketkan menjadi installer Windows (`.msi` / executable mandiri) via Gradle task `packageMsi` / `packageDistributionForCurrentOS`.
+
+### Fase 7: Optimasi & Pemangkasan Fitur (Klien Windows Saja)
+
+Tujuan: aplikasi ringan — lebih kecil paketnya, lebih sedikit yang jalan di latar belakang, dan
+tidak ada fitur yang memang tidak pernah bisa aktif di mesin ini. Yang dibuang beserta alasannya:
+
+- [x] **Automix + transisi DJ** — penyebab terberat di aplikasi:
+  - `onnxruntime` **51,9 MB** satu jar, model `beat_this_int8.onnx` (4,5 MB) + `vocals_umxhq_int8.onnx` (9 MB),
+    analyser C++ (`native/analyzer`, `bitchord_analysis.dll`), dan ~2.500 baris Kotlin.
+  - Butuh inferensi latar belakang saat lagu diputar (thread analisis + ONNX session) — beban CPU yang
+    tidak terasa manfaatnya untuk mendengarkan lagu di desktop.
+  - Efek transisi echo / beat-roll / reverb / flanger-crush-phaser-vibrato ikut dibuang; **crossfade
+    manual 0–12 detik dan "Crossfade saat skip" tetap ada**, lengkap dengan penanda di scrubber.
+  - Penggantinya: satu loader native umum `DesktopNativeRuntime.kt` (dipakai frame Windows + SMTC),
+    dan proyek CMake SMTC dipisah (`desktopApp/native/smtc/`) supaya tombol media Windows tidak ikut hilang.
+- [ ] **Modul JS (GraalVM)** — `polyglot` + `js-language` + `truffle` + ICU bawaan ≈ **61 MB**, hanya dipakai
+  host plugin yang tidak punya UI instal; indeks modul upstream sudah 404 dan preferensi
+  `MODULE_INDEX_URL` tidak pernah dibaca kode.
+- [ ] **Kode macOS & Linux** — `DesktopMacFrame`, MPRIS/StatusNotifier Linux, libsecret, pemantau audio
+  ALSA, dependensi `dbus-java`, dan semua cabang target selain Windows di skrip Gradle.
+- [ ] **Listen Together / PartySync / QR + telemetri Presence** — butuh server pihak ketiga yang tidak
+  pernah diisi; `Presence` mengirim ping "aplikasi terbuka" ke server upstream tiap ~5 menit.
+- [ ] **Sumber JioSaavn** — ikut *balapan* resolusi di setiap lagu sehingga memperlambat suara pertama.
+

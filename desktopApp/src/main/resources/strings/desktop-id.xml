@@ -104,6 +104,7 @@
     <string name="d_island_hide_paused">Sembunyikan saat jeda</string>
     <string name="d_island_hide_paused_subtitle">Menghilangkan kapsul dari halaman setiap kali pemutaran dijeda</string>
     <string name="d_island_layout">Tata letak</string>
+    <string name="d_crossfade_on_skip">Crossfade saat skip</string>
     <string name="d_island_layout_compact">Ringkas</string>
     <string name="d_island_layout_compact_subtitle">Baris yang sedang dinyanyikan, sampul, dan putar/jeda</string>
     <string name="d_island_layout_full">Penuh</string>

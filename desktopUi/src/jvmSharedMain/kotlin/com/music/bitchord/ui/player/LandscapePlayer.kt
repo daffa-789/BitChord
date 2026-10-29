@@ -7,6 +7,8 @@ import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.togetherWith
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
@@ -326,7 +328,6 @@ internal fun LandscapePlayerLayout(
 }
 
 /** The aura only dips to two-thirds between beats: a bloom that vanished entirely read as a flicker. */
-private const val GLOW_REST = 0.66f
 
 /** The aura's peak opacity. Full-strength white over the backdrop read as a blown-out halo. */
 private const val GLOW_PEAK = 0.5f
@@ -379,23 +380,23 @@ internal fun LandscapeArtwork(
     overlay: @Composable BoxScope.() -> Unit = {},
 ) {
     val casts = artLoaded || canvasRendered
-    // The same clock the scrubber and the "Mixing" label breathe on, so the aura pulses in step
-    // with them: the beat on a phone, the desktop's slow breath where the sleeve is rounded (the
-    // desktop window — see [PlayerScrubber]'s slowMixPulse). Held as a State and read only inside
-    // the draw below: the blend republishes every fade tick, and collecting it by value here
-    // would recompose the sleeve for a change only the canvas needs.
-    val mixBlend = PlayerSettings.smartMixBlend.collectAsStateWithLifecycle()
-    val reduceAnimation by PlayerSettings.reduceAnimation.collectAsStateWithLifecycle()
-    val glowPulse = rememberMixPulse({ mixBlend.value }, enabled = !reduceAnimation, slow = glowRounded)
+    // The aura blooms for exactly as long as the blend the scrubber shows, so the two agree on
+    // one signal rather than each keeping their own clock.
+    val mixing by PlayerSettings.mixInProgress.collectAsStateWithLifecycle()
+    val glowCover by animateFloatAsState(
+        targetValue = if (mixing) 1f else 0f,
+        animationSpec = tween(durationMillis = 700, easing = FastOutSlowInEasing),
+        label = "mixGlow",
+    )
     Box(
         modifier = modifier
             // Behind the sleeve, bleeding past its edges: a soft bloom that fades in with the
             // blend and beats with it. Read in the draw, so the pulse repaints the aura every
             // frame without recomposing the sleeve.
             .drawBehind {
-                val cover = glowPulse.cover
+                val cover = glowCover
                 if (cover <= 0f) return@drawBehind
-                val alpha = cover * glowPulse.alpha(1f, restShare = GLOW_REST) * GLOW_PEAK
+                val alpha = cover * GLOW_PEAK
                 if (alpha <= 0f) return@drawBehind
                 val radius = size.minDimension * GLOW_RADIUS
                 val brush = Brush.radialGradient(

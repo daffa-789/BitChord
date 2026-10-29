@@ -1,18 +1,14 @@
 package com.music.bitchord.desktop
 
 import com.music.bitchord.data.model.Song
-import com.music.bitchord.data.settings.AutomixPerformanceMode
-import com.music.bitchord.data.settings.MixBlend
-import com.music.bitchord.data.settings.SmartAnalysis
-import com.music.bitchord.data.settings.TrackAnalysisState
 import com.music.bitchord.data.settings.TransitionWindow
 import com.music.bitchord.playback.EqCurve
 import com.music.bitchord.playback.TransitionFilter
 import com.music.bitchord.playback.smart.CrossfadeMode
 import com.music.bitchord.playback.smart.TransitionPlan
 import com.music.bitchord.playback.smart.TransitionStyle
+import com.music.bitchord.playback.smart.TrackAnalysis
 import com.music.bitchord.playback.smart.TransitionTrackInfo
-import com.music.bitchord.playback.smart.echoTailSeconds
 import com.music.bitchord.playback.smart.planTransition
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
@@ -57,13 +53,6 @@ class DesktopPlaybackEngine(
 
     private val sink = DesktopAudioSink()
 
-    /** Automix's evidence. */
-    private val analyzer = DesktopTrackAnalyzer(
-        performance = { automixPerformance },
-        // Automix is off in a party, so whatever was queued for it before the party began is
-        // dropped rather than run to completion.
-        stopped = { DesktopListenTogether.state.value.inParty },
-    )
     private val commands = ConcurrentLinkedQueue<Command>()
     private val running = AtomicBoolean(true)
 
@@ -116,18 +105,12 @@ class DesktopPlaybackEngine(
     // from the audio thread on the next block.
     @Volatile private var audioQuality = "HIGH"
     @Volatile private var crossfadeSeconds = 0
-    @Volatile private var automixEnabled = false
     /**
-     * Whether a manual skip may blend into the next track instead of cutting. When on but neither
-     * Automix nor a Crossfade length is set, it still keeps the incoming deck prepared so a skip has
-     * something to mix into — see [transitionSecondsFor] and [beginSkipMix].
+     * Whether a manual skip may blend into the next track instead of cutting. When on but no
+     * Crossfade length is set, it still keeps the incoming deck prepared so a skip has something to
+     * mix into — see [transitionSecondsFor] and [beginSkipMix].
      */
     @Volatile private var skipMixEnabled = false
-    /**
-     * Apple-style Automix phrase length in bars: 0 leaves the adaptive planner in
-     * charge, 8 or 16 asks the shared planner for a mix of exactly that many bars.
-     */
-    @Volatile private var automixPhraseBars = 0
     @Volatile private var nextSong: Song? = null
 
     /** [nextSong]'s downloaded file, when it has one, for its analysis. */
@@ -159,32 +142,28 @@ class DesktopPlaybackEngine(
         /**
          * Where in this track its first rendered sample sits.
          *
-         * A `var` because Automix moves it: cueing the incoming track to a downbeat seeks its
+         * A `var` because a transition moves it: cueing the incoming track past its head seeks its
          * decoder, and a position published against an unmoved start is short by the whole cue.
          */
         var startUs: Long,
     ) {
         var gain = 1f
         var finished = false
+        /**
+         * The mixer's own holdover, kept across the handoff so a deck supplies exactly one outgoing
+         * block whatever the decoder hands over; see [readIncoming] and [readCurrent].
+         */
         var tempo: DesktopTempoBuffer? = null
-        var tempoRate = 1.0
-        var tempoEaseStep = 0.0
-        var tempoEaseEveryFrames = 0L
-        var tempoEaseNextFrame = Long.MAX_VALUE
-        var tempoOutputFrames = 0L
-        /** The stretch has eased out and [tempo] is only playing off what it still held. */
+        /** The stretch has ended and [tempo] is only playing off what it still held. */
         var tempoDrained = false
         /** Brings this track to the output stream's rate, when the two differ; see [readSource]. */
         var converter: DesktopRateConverter? = null
 
-        /** Back to the decoder at the listener's speed, dropping any beatmatch stretch. */
+        /** Back to the decoder at the listener's speed, dropping any held surplus. */
         fun dropTempo() {
             // The converter's history is from before whatever moved the decoder.
             converter = null
             tempo = null
-            tempoRate = 1.0
-            tempoEaseStep = 0.0
-            tempoEaseNextFrame = Long.MAX_VALUE
             tempoDrained = false
         }
     }
@@ -476,35 +455,20 @@ class DesktopPlaybackEngine(
 
     fun setCrossfadeSeconds(seconds: Int) {
         crossfadeSeconds = seconds.coerceIn(0, MAX_CROSSFADE_SECONDS)
-        if (crossfadeSeconds == 0 && !automixEnabled && !skipMixEnabled) clearUpcoming()
-    }
-
-    /** Enables Android's separate Automix setting. */
-    fun setAutomixEnabled(enabled: Boolean) {
-        automixEnabled = enabled
-        if (!enabled && crossfadeSeconds == 0 && !skipMixEnabled) clearUpcoming()
+        if (crossfadeSeconds == 0 && !skipMixEnabled) clearUpcoming()
     }
 
     /** Enables blending into the next track on a manual skip; see [beginSkipMix]. */
     fun setSkipMixEnabled(enabled: Boolean) {
         skipMixEnabled = enabled
-        if (!enabled && !automixEnabled && crossfadeSeconds == 0) clearUpcoming()
-    }
-
-    /**
-     * Sets the Apple-style Automix phrase length. Only 8 or 16 bars are meaningful;
-     * anything else (including 0) turns the fixed-phrase mix off and hands timing
-     * back to the adaptive planner.
-     */
-    fun setAutomixPhraseBars(bars: Int) {
-        automixPhraseBars = if (bars == 8 || bars == 16) bars else 0
+        if (!enabled && crossfadeSeconds == 0) clearUpcoming()
     }
 
     /**
      * Asks the engine to blend into the already-prepared next track right now, rather than waiting
      * for the outgoing one to run out. Returns whether such a blend could be started — a manual
      * skip only mixes when the incoming deck for [nextVideoId] is already open (it is whenever
-     * Automix or a Crossfade length is set) and no blend is already under way; otherwise the caller
+     * a Crossfade length or skip-mix is set) and no blend is already under way; otherwise the caller
      * does an ordinary cut, exactly as before. The mix itself runs on the audio thread; this just
      * queues it.
      */
@@ -534,11 +498,6 @@ class DesktopPlaybackEngine(
         // would have answered for it.
         val local = DesktopDownloadManager.savedFile(song)?.toAbsolutePath()?.toString()?.let { DesktopStream(it) }
         nextLocalStream = local
-        // Measured on YouTube Opus (or the file) whatever will end up serving it, so Automix has
-        // its analysis without anything being fetched from the source that will play it.
-        if (automixEnabled && !song.isVideoOrigin) {
-            analyzer.request(song, local, song.durationText.durationSeconds())
-        }
         if (local == null && DesktopMusicSources.mayServeFromAddon(song)) {
             // Android does not read an addon's track ahead; it is asked for a stream only once the
             // track is about to play. Held here and armed shortly before the transition — see
@@ -662,7 +621,6 @@ class DesktopPlaybackEngine(
     }
 
     fun release() {
-        analyzer.release()
         running.set(false)
         resolveJob?.cancel()
         nextResolveJob?.cancel()
@@ -693,10 +651,9 @@ class DesktopPlaybackEngine(
     private fun transitionSecondsFor(next: Song?): Int = when {
         next == null -> 0
         crossfadeSeconds > 0 -> crossfadeSeconds
-        automixEnabled -> AUTOMIX_FALLBACK_SECONDS
-        // Skip-mix needs the incoming deck open to blend into, even when neither Automix nor a
+        // Skip-mix needs the incoming deck open to blend into, even when no
         // Crossfade length would otherwise prepare one.
-        skipMixEnabled -> AUTOMIX_FALLBACK_SECONDS
+        skipMixEnabled -> MIX_FALLBACK_SECONDS
         else -> 0
     }
 
@@ -723,31 +680,8 @@ class DesktopPlaybackEngine(
     /** The playing track's heard position, on the sink's played-frame count; see [play]. */
     private val playhead = DesktopPlayhead()
     private var fadeRemaining = 0
+    /** The nominal fader span, in output samples of the sink's interleaved format. */
     private var fadeTotal = 0
-    /** Fade plus any echo/roll/reverb tail. [fadeTotal] remains the nominal fader span. */
-    private var transitionTotal = 0
-    private var transitionEcho: DesktopTransitionEcho? = null
-
-    /**
-     * Beat-roll and reverb-tail sends on the outgoing deck, for a smart transition whose plan asked
-     * for no echo. The echo already owns "repeats as it leaves" when the planner chose one; these
-     * are the subtler variant — a frozen 1/4- or 1/8-beat roll plus a decaying tail — and never
-     * stack with it. [beatRepeatLatched] flips once, at the point the roll freezes.
-     */
-    private var transitionBeatRepeat: DesktopTransitionBeatRepeat? = null
-    private var transitionReverb: DesktopTransitionReverb? = null
-
-    /**
-     * The one rotating texture send on the outgoing deck — flanger, crush, phaser, vibrato or
-     * stereo width — chosen per transition by [chooseTexture] from what the plan reports about the
-     * pair. Only one is live at a time, and, like the roll and reverb, it never arms alongside an
-     * echo; the echo already owns "repeats as it leaves".
-     */
-    private var transitionTexture: DesktopTransitionTexture? = null
-    private var beatRepeatActive = false
-    private var beatRepeatLatched = false
-    private var reverbActive = false
-    private var textureActive = false
 
     /**
      * Samples of the incoming track already rendered under the outgoing one.
@@ -805,7 +739,6 @@ class DesktopPlaybackEngine(
         val track = current
         if (track == null || paused) {
             if (paused) sink.pause()
-            if (paused && fadeRemaining > 0) publishBlend(playing = false)
             Thread.sleep(20)
             return
         }
@@ -849,12 +782,11 @@ class DesktopPlaybackEngine(
     private fun play(track: Track, samples: FloatArray, count: Int, skippedFrames: Long = 0L) {
         val rate = sink.format.sampleRate
         if (rate > 0) {
-            val deck = deckRate(track)
             playhead.change(
                 frame = framesWritten,
                 usPerFrame = usPerFrame(track),
                 // Cut before the listener's stretch, so it is the deck's time, not the speaker's.
-                skippedUs = skippedFrames.coerceAtLeast(0L) * 1_000_000.0 / rate * deck,
+                skippedUs = skippedFrames.coerceAtLeast(0L) * 1_000_000.0 / rate,
             )
         }
         sink.write(samples, count)
@@ -862,13 +794,9 @@ class DesktopPlaybackEngine(
         if (count > 0 && _state.value.awaitingAudio) _state.update { it.copy(awaitingAudio = false) }
     }
 
-    /** The beatmatch stretch [track] is actually rendered at — [DesktopTempoBuffer]'s clamp included. */
-    private fun deckRate(track: Track): Double =
-        if (track.tempo != null && !track.tempoDrained) track.tempoRate.coerceIn(1.0, 1.1) else 1.0
-
-    /** Source time each output frame of [track] covers: the listener's speed times the deck's. */
+    /** Source time each output frame of [track] covers: the listener's speed. */
     private fun usPerFrame(track: Track): Double =
-        1_000_000.0 / sink.format.sampleRate.coerceAtLeast(1) * playbackSpeed * deckRate(track)
+        1_000_000.0 / sink.format.sampleRate.coerceAtLeast(1) * playbackSpeed
 
     /** Starts [playhead] over: what the speakers are playing right now is [positionUs] of [track]. */
     private fun resetPlayhead(track: Track, positionUs: Long) {
@@ -887,8 +815,7 @@ class DesktopPlaybackEngine(
         if (mixed.size < count) mixed = FloatArray(count)
         val other = readIncoming(incoming, count)
         val otherCount = incomingReadCount
-        val incomingRate = deckRate(incoming)
-        incomingSourceFrames += otherCount.toDouble() / sink.format.channels.coerceAtLeast(1) * incomingRate
+        incomingSourceFrames += otherCount.toDouble() / sink.format.channels.coerceAtLeast(1)
         if (other != null) {
             widen(spatialIncoming, incoming, other, otherCount)
             equalise(equalizerIncoming, other, otherCount)
@@ -899,7 +826,7 @@ class DesktopPlaybackEngine(
 
         var index = 0
         while (index < count) {
-            val progress = ((transitionTotal - fadeRemaining).toFloat() / fadeTotal.coerceAtLeast(1))
+            val progress = ((fadeTotal - fadeRemaining).toFloat() / fadeTotal.coerceAtLeast(1))
             val styleProgress = progress.coerceIn(0f, 1f)
             plan?.let { DesktopTransitionRide.aim(it, styleProgress, outgoingFilter, incomingFilter) }
             outgoingFilter.advance()
@@ -912,80 +839,32 @@ class DesktopPlaybackEngine(
             // peaking together would be clipped hard by the sink. A smooth trim of
             // 1 / sqrt(out + into) holds that to 1.19 for at most 1.5 dB, and reshapes nothing:
             // the same trim Android's two players take.
-            val outgoingLevel = if (plan != null && plan.echoSeconds > 0.0) {
-                DesktopTransitionRide.echoLevel(plan, progress)
-            } else {
-                out
-            }
-            val trim = 1f / kotlin.math.sqrt((outgoingLevel + into).coerceAtLeast(1f))
+            val trim = 1f / kotlin.math.sqrt((out + into).coerceAtLeast(1f))
             val stop = minOf(count, index + subBlock)
             val span = stop - index
             while (index < stop) {
                 val channel = index % channels
-                var leaving = outgoingFilter.filter(channel, block[index])
-                if (plan != null && plan.echoSeconds > 0.0) {
-                    val echoAt = DesktopTransitionRide.echoAt(plan)
-                    val echoFrom = DesktopTransitionRide.echoFrom(plan)
-                    if (progress >= echoFrom) {
-                        val send = if (progress >= echoAt) 0f else ((progress - echoFrom) / (echoAt - echoFrom)).coerceIn(0f, 1f)
-                        val kill = DesktopTransitionRide.echoKill(plan)
-                        val dry = (1f - ((progress - echoAt) / kill).coerceIn(0f, 1f))
-                        leaving = transitionEcho?.process(leaving, send, dry) ?: leaving
-                    }
-                }
+                val leaving = outgoingFilter.filter(channel, block[index])
                 val arriving = if (index < otherCount) {
                     incomingFilter.filter(channel, other!![index])
                 } else {
                     0f
                 }
-                // Post-fader sends on the outgoing deck: a frozen beat-roll and a reverb tail. Added
-                // after the fader so they keep sounding once the outgoing dry has faded to nothing,
-                // ringing out over the incoming track through the extended tail.
-                var fxSend = 0f
-                if (beatRepeatActive) {
-                    val roll = transitionBeatRepeat
-                    if (roll != null) {
-                        if (progress >= ROLL_START && !beatRepeatLatched) {
-                            roll.latch()
-                            beatRepeatLatched = true
-                        }
-                        // Fed every sample so the ring always holds the last slice of live audio.
-                        val wet = roll.process(leaving, 1f, 0f)
-                        val ramp = ((progress - ROLL_START) / (1f - ROLL_START)).coerceIn(0f, 1f) * ROLL_SEND
-                        fxSend += wet * ramp
-                    }
-                }
-                if (reverbActive) {
-                    val reverb = transitionReverb
-                    if (reverb != null) {
-                        val ramp = ((progress - REVERB_START) / (1f - REVERB_START)).coerceIn(0f, 1f) * REVERB_SEND
-                        // Only fed once the ramp opens, so the tail is of the outgoing's exit, not a
-                        // wash of its whole fade; afterwards it rings from the combs' own feedback.
-                        if (ramp > 0f) fxSend += reverb.process(channel, leaving) * ramp
-                    }
-                }
-                if (textureActive) {
-                    val texture = transitionTexture
-                    if (texture != null) {
-                        val ramp = ((progress - TEXTURE_START) / (1f - TEXTURE_START)).coerceIn(0f, 1f) * TEXTURE_SEND
-                        if (ramp > 0f) fxSend += texture.process(channel, leaving) * ramp
-                    }
-                }
-                mixed[index] = ((leaving * out + arriving * into) + fxSend) * trim
+                mixed[index] = (leaving * out + arriving * into) * trim
                 index++
             }
             fadeRemaining -= span
         }
-        val progress = ((transitionTotal - fadeRemaining).toFloat() / fadeTotal.coerceAtLeast(1))
+        val progress = ((fadeTotal - fadeRemaining).toFloat() / fadeTotal.coerceAtLeast(1))
         val handoffAt = plan?.let(DesktopTransitionRide::handoffAt) ?: DISPLAY_SWITCH_AT
         if (!displaySwitched && progress >= handoffAt && fadeRemaining > 0) switchDisplay(incoming)
-        if (fadeRemaining <= 0) promoteUpcoming() else publishBlend(playing = true)
+        if (fadeRemaining <= 0) promoteUpcoming()
         return mixed to count
     }
 
-    /** Reads the playing deck, preserving a tempo buffer inherited from its incoming handoff. */
+    /** Reads the playing deck, preserving the buffer inherited from its incoming handoff. */
     private fun readCurrent(track: Track): FloatArray? {
-        // An eased-out stretch whose held audio has all been played: back on the decoder itself.
+        // An ended stretch whose held audio has all been played: back on the decoder itself.
         // Left in place, the stretcher went on windowing the track at 1x until it ended — never
         // quite transparent, and heard as the tempo and the pitch never coming back.
         if (track.tempoDrained && track.tempo?.available == 0) {
@@ -1002,35 +881,32 @@ class DesktopPlaybackEngine(
                 currentReadCount = 0
                 return null
             }
-            tempo.speed = track.tempoRate.toFloat()
             tempo.push(source, sourceReadCount)
         }
         val block = tempo.take(DEFAULT_TEMPO_OUTPUT_SAMPLES)
         currentReadCount = tempo.outputCount
-        advanceTempoEase(track, currentReadCount / sink.format.channels.coerceAtLeast(1))
-        if (track.tempoRate <= 1.0 && !track.tempoDrained) {
-            // Nothing more is pushed from here; what the stretcher holds is queued unstretched and
-            // the decoder takes over once it has played.
+        if (!track.tempoDrained) {
+            // Nothing more is pushed from here; what the buffer holds is played as it stands and the
+            // decoder takes over once it has run out.
             tempo.finish()
             track.tempoDrained = true
         }
         return block
     }
 
-    /** Supplies exactly one outgoing block of the incoming deck, retaining any stretched surplus. */
+    /** Supplies exactly one outgoing block of the incoming deck, retaining any surplus. */
     private fun readIncoming(track: Track, wanted: Int): FloatArray? {
         // Always through a buffer, even unstretched. Read raw, the incoming deck gave one decoder
         // block per outgoing block whatever its size: a shorter one (Opus hands over 20ms at a
         // time) left the rest of the mix block silent, and a longer one had its end cut off — the
-        // crackle all through an Automix blend. At 1x the buffer is a plain FIFO, and once the
-        // track is promoted [readCurrent] drains it and goes back to the decoder.
+        // crackle all through a blend. The buffer is a plain FIFO, and once the track is promoted
+        // [readCurrent] drains it and goes back to the decoder.
         val tempo = track.tempo ?: DesktopTempoBuffer(
             sink.format.channels.coerceAtLeast(1),
             sink.format.sampleRate,
         ).also { track.tempo = it }
         while (tempo.available < wanted) {
             val source = readSource(track) ?: break
-            tempo.speed = track.tempoRate.toFloat()
             tempo.push(source, sourceReadCount)
         }
         if (tempo.available == 0) {
@@ -1074,17 +950,6 @@ class DesktopPlaybackEngine(
         return converted
     }
 
-    /** Eases a promoted beatmatch stretch back by at most 0.75% on each beat. */
-    private fun advanceTempoEase(track: Track, outputFrames: Int) {
-        if (track.tempoEaseStep <= 0.0 || outputFrames <= 0) return
-        track.tempoOutputFrames += outputFrames
-        while (track.tempoOutputFrames >= track.tempoEaseNextFrame && track.tempoRate > 1.0) {
-            track.tempoRate = (track.tempoRate - track.tempoEaseStep).coerceAtLeast(1.0)
-            track.tempoEaseNextFrame += track.tempoEaseEveryFrames
-        }
-        if (track.tempoRate <= 1.0001) track.tempoRate = 1.0
-    }
-
     /** Widens one track's samples, unless the audio is Dolby Atmos. */
     private fun widen(widener: DesktopSpatialAudio?, track: Track, samples: FloatArray, count: Int) {
         val processor = widener ?: return
@@ -1123,28 +988,11 @@ class DesktopPlaybackEngine(
 
     private fun promoteUpcoming() {
         val incoming = upcoming ?: return
-        val plan = activePlan
         activePlan = null
-        transitionEcho = null
-        transitionBeatRepeat = null
-        transitionReverb = null
-        transitionTexture = null
-        beatRepeatActive = false
-        beatRepeatLatched = false
-        reverbActive = false
-        textureActive = false
         outgoingFilter.open()
         incomingFilter.open()
         current?.decoder?.close()
         current = incoming
-        if (incoming.tempo != null && incoming.tempoRate > 1.0) {
-            val steps = ceil((incoming.tempoRate - 1.0) / TEMPO_STEP_PER_BEAT).toInt().coerceAtLeast(1)
-            incoming.tempoEaseStep = (incoming.tempoRate - 1.0) / steps
-            incoming.tempoEaseEveryFrames = (
-                (plan?.beatSeconds ?: 0.0).takeIf { it > 0.0 } ?: EASE_FALLBACK_SECONDS
-                ).times(sink.format.sampleRate).toLong().coerceAtLeast(1L)
-            incoming.tempoEaseNextFrame = incoming.tempoOutputFrames + incoming.tempoEaseEveryFrames
-        }
         // The equalisers swap with the tracks they belong to. The incoming one has been filtering
         // this track for the whole crossfade, and its sections — a 60 Hz shelf above all — are
         // ringing with that audio; handing the track over to the other one instead would hand it
@@ -1163,7 +1011,7 @@ class DesktopPlaybackEngine(
         // audio, which only a manual seek could put right.
         // Less what is still queued in the sink: [playhead] restarts from the played-frame count
         // here, so the queued audio — this track's — is counted again as it plays out.
-        val handoverUs = incoming.startUs + incomingElapsedUs() - queuedSourceUs(deckRate(incoming))
+        val handoverUs = incoming.startUs + incomingElapsedUs() - queuedSourceUs()
         resetPlayhead(incoming, handoverUs)
         DesktopTrackLog.log(
             "transition complete: '${incoming.song.title}' resumes at " +
@@ -1198,7 +1046,6 @@ class DesktopPlaybackEngine(
      * carries out a [prepareNext] that arrived while it ran. Called however the blend ended.
      */
     private fun endBlend() {
-        DesktopPlayerSettings.smartMixBlend.value = null
         var had = false
         var next: Song? = null
         synchronized(blendLock) {
@@ -1212,61 +1059,16 @@ class DesktopPlaybackEngine(
     }
 
     /** Source time of audio written to the sink but not yet heard. */
-    private fun queuedSourceUs(deckRate: Double = 1.0): Long {
+    private fun queuedSourceUs(): Long {
         val rate = sink.format.sampleRate
         if (rate <= 0) return 0L
         val queued = (framesWritten - sink.framesPlayed()).coerceAtLeast(0L)
-        return (queued * 1_000_000L / rate * playbackSpeed * deckRate).toLong()
+        return (queued * 1_000_000L / rate * playbackSpeed).toLong()
     }
 
     /** Where in the incoming track the listener is right now, mid-blend. */
     private fun incomingHeardUs(incoming: Track): Long =
-        (incoming.startUs + incomingElapsedUs() - queuedSourceUs(deckRate(incoming))).coerceAtLeast(incoming.startUs)
-
-    /**
-     * Tells the shared scrubber where the blend's beats fall — see Android's
-     * `CrossfadeController.publishBlend`, whose rules this follows: the grid of whichever song is
-     * the louder, placed against what is heard rather than what is decoded, and only re-sent when
-     * it has moved further than a tick's jitter.
-     */
-    private fun publishBlend(playing: Boolean) {
-        if (!automixEnabled) return
-        val track = current ?: return
-        val incoming = upcoming ?: return
-        val last = DesktopPlayerSettings.smartMixBlend.value
-        if (last != null && !playing && !last.playing) return
-        val listenerSpeed = playbackSpeed.toDouble().takeIf { it > 0.0 } ?: 1.0
-        val outgoingHeardUs = _state.value.let { state ->
-            if (state.song?.videoId == track.song.videoId) state.positionMs * 1_000 else null
-        } ?: outgoingHeardUs()
-        val sides = listOf(
-            Triple(analyzer.analysisFor(track.song.videoId), outgoingHeardUs, listenerSpeed * track.tempoRate),
-            Triple(analyzer.analysisFor(incoming.song.videoId), incomingHeardUs(incoming), listenerSpeed * incoming.tempoRate),
-        ).let { if (displaySwitched) it.reversed() else it }
-        val side = sides.firstOrNull { (analysis, _, _) -> analysis.beatInterval > 0.0 || analysis.bpm > 0.0 }
-        var beatMs = 0f
-        var anchor = 0L
-        if (side != null) {
-            val (analysis, heardUs, speed) = side
-            val beat = if (analysis.beatInterval > 0.0) analysis.beatInterval else 60.0 / analysis.bpm
-            val sinceBeat = ((heardUs / 1_000_000.0 - analysis.firstBeat) % beat + beat) % beat
-            beatMs = (beat * 1000.0 / speed).toFloat()
-            anchor = System.nanoTime() - (sinceBeat / speed * 1e9).toLong()
-        }
-        if (last != null && last.playing == playing && sameGrid(last, beatMs, anchor)) return
-        DesktopPlayerSettings.smartMixBlend.value = MixBlend(beatMs = beatMs, beatAnchorNanos = anchor, playing = playing)
-    }
-
-    /** The outgoing track's heard position, from the sink's clock — [publishPosition]'s sum. */
-    private fun outgoingHeardUs(): Long = playhead.at(sink.framesPlayed())
-
-    private fun sameGrid(last: MixBlend, beatMs: Float, anchor: Long): Boolean {
-        if (beatMs <= 0f || last.beatMs <= 0f) return beatMs <= 0f && last.beatMs <= 0f
-        if (kotlin.math.abs(beatMs - last.beatMs) > beatMs * 0.005f) return false
-        val beatNanos = (beatMs * 1_000_000.0).toLong().coerceAtLeast(1L)
-        val offset = Math.floorMod(anchor - last.beatAnchorNanos, beatNanos)
-        return minOf(offset, beatNanos - offset) <= ANCHOR_TOLERANCE_NANOS
-    }
+        (incoming.startUs + incomingElapsedUs() - queuedSourceUs()).coerceAtLeast(incoming.startUs)
 
     private fun drainCommands() {
         while (true) {
@@ -1368,14 +1170,6 @@ class DesktopPlaybackEngine(
         sink.flush()
         framesWritten = sink.framesPlayed()
         activePlan = null
-        transitionEcho = null
-        transitionBeatRepeat = null
-        transitionReverb = null
-        transitionTexture = null
-        beatRepeatActive = false
-        beatRepeatLatched = false
-        reverbActive = false
-        textureActive = false
         outgoingFilter.open()
         incomingFilter.open()
         startTrack(track, playWhenReady)
@@ -1455,27 +1249,6 @@ class DesktopPlaybackEngine(
         incomingFilter.configure(sink.format.channels, sink.format.sampleRate)
     }
 
-    /** Asks for a track to be analysed, if Automix is on and there is anything to analyse. */
-    private fun requestAnalysis(track: Track) {
-        if (!automixEnabled) return
-        val seconds = (track.decoder.durationUs ?: 0L) / 1_000_000.0
-        val known = seconds.takeIf { it > 0 }
-            ?: (track.song.durationText.durationSeconds())
-        analyzer.request(track.song, track.stream, known)
-    }
-
-    /** Measures the pair around the playhead — the playing track first, then the one after it. */
-    private fun requestAnalysisAround(track: Track) {
-        if (!automixEnabled) return
-        val next = upcoming
-        // A track held back from read-ahead has no decoder yet, but is measured all the same.
-        val held = if (next == null) nextSong else null
-        if (track.song.isVideoOrigin || next?.song?.isVideoOrigin == true || held?.isVideoOrigin == true) return
-        requestAnalysis(track)
-        next?.let(::requestAnalysis)
-        held?.let { analyzer.request(it, nextLocalStream, it.durationText.durationSeconds()) }
-    }
-
     private fun performSeek(millis: Long) {
         // Past the midpoint the listener is looking at — and seeking in — the incoming song, so
         // the blend is finished on the spot and the seek lands on that one.
@@ -1543,7 +1316,6 @@ class DesktopPlaybackEngine(
             streamFormat = track.decoder.measuredFormat ?: track.stream.format,
             streamSourceId = track.stream.sourceId,
             searchingBetter = track.song.videoId.let { it == searchingBetterFor || it == incomingSearchingFor },
-            smartAnalysis = analysisStatus(track),
         )
     }
 
@@ -1561,7 +1333,7 @@ class DesktopPlaybackEngine(
                     positionMs = positionMs,
                     positionSampledAtNanos = sampledAt,
                     isPlaying = !paused,
-                    mixing = isSmartMixInProgress(),
+                    mixing = fadeRemaining > 0,
                 )
             }
             return
@@ -1570,43 +1342,19 @@ class DesktopPlaybackEngine(
         // Taken with the reading, here on the audio thread: see DesktopPlaybackState.
         val sampledAt = System.nanoTime()
         if (_state.value.song?.videoId != track.song.videoId) return
-        requestAnalysisAround(track)
-        val status = analysisStatus(track)
-        // Published when the clock moves *or* when Automix's answer does.
         val moved = _state.value.positionMs / 250 != positionMs / 250
-        if (!moved && _state.value.smartAnalysis == status) return
+        if (!moved) return
         _state.update {
             it.copy(
                 positionMs = positionMs,
                 positionSampledAtNanos = sampledAt,
                 isPlaying = !paused,
-                smartAnalysis = status,
-                mixing = isSmartMixInProgress(),
+                mixing = fadeRemaining > 0,
             )
         }
 
         maybeStartCrossfade(track, positionMs)
     }
-
-    /**
-     * Matches Android's Automix signal: a plain equal-power fallback is still a crossfade, but it
-     * does not light the Automix animation unless analysis changed the style, cue or tempo.
-     */
-    private fun isSmartMixInProgress(): Boolean {
-        val plan = activePlan ?: return false
-        return automixEnabled && fadeRemaining > 0 && (
-            plan.transitionStyle == TransitionStyle.DJ_BLEND ||
-                plan.transitionStyle == TransitionStyle.DJ_FILTER ||
-                plan.incomingCueTime > 0.0 ||
-                plan.incomingPlaybackRate != 1.0
-            )
-    }
-
-    /** Both halves of the next transition, for the player's Automix line. */
-    private fun analysisStatus(track: Track): SmartAnalysis = SmartAnalysis(
-        current = analyzer.stateFor(track.song.videoId),
-        next = analyzer.stateFor(upcoming?.song?.videoId ?: nextSong?.videoId.orEmpty()),
-    )
 
     private fun maybeStartCrossfade(track: Track, positionMs: Long) {
         val incoming = upcoming
@@ -1640,12 +1388,11 @@ class DesktopPlaybackEngine(
     /**
      * Open the blend that is already armed on both decks. Shared by the position-gated planner and
      * by a manual skip that asks to mix now: the only difference is which [TransitionPlan] is handed
-     * in, so both routes get the same cue, tempo, echo and texture arming.
+     * in, so both routes get the same cue and fader ride.
      */
     private fun armIncomingBlend(incoming: Track, plan: TransitionPlan) {
         val seconds = plan.fadeSeconds.takeIf { it > 0 } ?: return
-        // A planned transition says where the incoming track should be entered, which is the whole
-        // difference between Automix and a crossfade.
+        // A planned transition says where the incoming track should be entered.
         if (plan.incomingCueTime > 0) {
             val cueUs = (plan.incomingCueTime * 1_000_000).toLong()
             incoming.decoder.seek(cueUs)
@@ -1657,95 +1404,21 @@ class DesktopPlaybackEngine(
         DesktopTrackLog.log(
             "transition into '${incoming.song.title}': ${"%.1f".format(seconds)}s" +
                 ", ${plan.transitionStyle}" +
-                (if (plan.transitionBeats > 0) ", ${plan.transitionBeats} beats" else "") +
                 (if (plan.incomingCueTime > 0) ", cued at ${"%.1f".format(plan.incomingCueTime)}s" else ""),
         )
         fadeTotal = (seconds * sink.format.sampleRate * sink.format.channels).toInt()
-        val echoTail = (echoTailSeconds(plan.echoSeconds) * sink.format.sampleRate * sink.format.channels).toInt()
-        // The beat-roll and reverb-tail are the subtler alternative to a planned echo, so they only
-        // arm on a smart DJ transition the planner gave no echo to, and never stack with one.
-        val djStyle = plan.transitionStyle == TransitionStyle.DJ_BLEND ||
-            plan.transitionStyle == TransitionStyle.DJ_FILTER
-        val noEcho = plan.echoSeconds <= 0.0
-        beatRepeatActive = noEcho && djStyle && plan.beatSeconds > 0.0 && plan.transitionBeats >= 4
-        reverbActive = noEcho && djStyle
-        val textureKind = if (noEcho && djStyle) chooseTexture(plan) else TransitionTexture.NONE
-        textureActive = textureKind != TransitionTexture.NONE
-        beatRepeatLatched = false
-        transitionBeatRepeat = if (beatRepeatActive) {
-            val division = if (plan.beatSeconds < EIGHTH_NOTE_MAX_BEAT_SECONDS) 2.0 else 1.0
-            DesktopTransitionBeatRepeat(sink.format.sampleRate, sink.format.channels)
-                .also { it.configure(plan.beatSeconds / division) }
-        } else null
-        transitionReverb = if (reverbActive) {
-            DesktopTransitionReverb(sink.format.sampleRate, sink.format.channels).also { it.reset() }
-        } else null
-        transitionTexture = if (textureActive) {
-            newTexture(textureKind, sink.format.sampleRate, sink.format.channels).also { it.reset() }
-        } else null
-        val fxTail = (
-            (if (beatRepeatActive) ROLL_TAIL_SECONDS else 0.0) +
-                (if (reverbActive) REVERB_TAIL_SECONDS else 0.0) +
-                (if (textureActive) TEXTURE_TAIL_SECONDS else 0.0)
-            ).let { (it * sink.format.sampleRate * sink.format.channels).toInt() }
-        transitionTotal = fadeTotal + echoTail + fxTail
-        fadeRemaining = transitionTotal
+        fadeRemaining = fadeTotal
         incomingSourceFrames = 0.0
         activePlan = plan
-        incoming.tempo = if (plan.incomingPlaybackRate > 1.0001) {
-            DesktopTempoBuffer(sink.format.channels, sink.format.sampleRate).also {
-                it.speed = plan.incomingPlaybackRate.toFloat()
-            }
-        } else null
-        incoming.tempoRate = plan.incomingPlaybackRate.coerceAtLeast(1.0)
-        transitionEcho = if (plan.echoSeconds > 0.0) {
-            DesktopTransitionEcho(sink.format.sampleRate, sink.format.channels).also { it.configure(plan.echoSeconds) }
-        } else null
+        incoming.dropTempo()
         outgoingFilter.flush()
         incomingFilter.flush()
         blendActive = true
     }
 
-    /**
-     * Which texture the outgoing tail gets for this plan, read from what the planner already knows
-     * about the pair rather than from a user choice — one effect is applied per transition, never a
-     * stack. Fast, sparse material takes the bit-crush; a tempo gap between the two grids takes the
-     * phaser's whoosh to bridge it; slow, sustained material takes the vibrato's pitch sway; two
-     * vocals singing over each other take the stereo spread to pull them apart. The flanger is the
-     * default when nothing more specific applies.
-     */
-    private fun chooseTexture(plan: TransitionPlan): TransitionTexture {
-        val bpm = plan.outgoingBpm
-        if (bpm <= 0.0) return TransitionTexture.FLANGER
-        val gap = kotlin.math.abs(plan.incomingBpm - plan.outgoingBpm)
-        return when {
-            plan.vocalOverlap >= 0.5 -> TransitionTexture.STEREO
-            bpm >= 128.0 && plan.vocalOverlap <= 0.15 -> TransitionTexture.CRUSH
-            gap > 4.0 -> TransitionTexture.PHASER
-            bpm < 95.0 -> TransitionTexture.VIBRATO
-            else -> TransitionTexture.FLANGER
-        }
-    }
-
-    private fun newTexture(
-        kind: TransitionTexture,
-        sampleRate: Int,
-        channels: Int,
-    ): DesktopTransitionTexture = when (kind) {
-        TransitionTexture.CRUSH -> DesktopTransitionCrush(sampleRate, channels)
-        TransitionTexture.PHASER -> DesktopTransitionPhaser(sampleRate, channels)
-        TransitionTexture.VIBRATO -> DesktopTransitionVibrato(sampleRate, channels)
-        TransitionTexture.STEREO -> DesktopTransitionStereo(sampleRate, channels)
-        else -> DesktopTransitionFlanger(sampleRate, channels)
-    }
-
     /** The marker on the scrubber, showing where the mix will happen before it happens. */
     private fun publishTransitionWindow(track: Track, plan: TransitionPlan, duration: Long) {
-        val status = analysisStatus(track)
-        val markable = !plan.blocked &&
-            plan.markerVisible &&
-            status.current == TrackAnalysisState.ANALYSED &&
-            status.next in MEASURED_ENOUGH_TO_ENTER_ON
+        val markable = !plan.blocked && plan.markerVisible
         _state.update {
             it.copy(
                 transitionWindow = if (markable) {
@@ -1785,7 +1458,7 @@ class DesktopPlaybackEngine(
         resolveUpcoming(song, race = true)
     }
 
-    /** What the shared planner makes of this pair. */
+    /** What the shared planner makes of this pair, on the listener's crossfade length. */
     private fun transitionPlan(
         track: Track,
         next: Song,
@@ -1794,23 +1467,20 @@ class DesktopPlaybackEngine(
         durationMs: Long,
     ): TransitionPlan {
         val manualSeconds = crossfadeSeconds
-        val smart = automixEnabled
-        if (!smart && manualSeconds <= 0) return TransitionPlan()
+        if (manualSeconds <= 0) return TransitionPlan()
         return planTransition(
-            analysis = analyzer.analysisFor(track.song.videoId),
-            nextAnalysis = analyzer.analysisFor(next.videoId),
+            // No beat evidence: the planner falls back to the two catalogue lengths.
+            analysis = TrackAnalysis(),
+            nextAnalysis = TrackAnalysis(),
             currentTrack = track.song.transitionInfo(durationMs),
             nextTrack = next.transitionInfo(nextDurationMs),
             currentTime = positionMs / 1_000.0,
             duration = durationMs / 1_000.0,
-            fadeSeconds = if (manualSeconds > 0) manualSeconds.toDouble() else AUTOMIX_FALLBACK_SECONDS.toDouble(),
-            mode = if (smart) CrossfadeMode.SMART else CrossfadeMode.STANDARD,
-            advanced = smart,
-            // A fixed phrase length only means anything under Automix; a manual
-            // crossfade keeps its slider length.
-            phraseBars = if (smart) automixPhraseBars else 0,
-            // The last/first 30 s window; the phone's planner calls leave it off.
-            mixWindow = true,
+            fadeSeconds = manualSeconds.toDouble(),
+            mode = CrossfadeMode.STANDARD,
+            advanced = false,
+            phraseBars = 0,
+            mixWindow = false,
         )
     }
 
@@ -1833,12 +1503,6 @@ class DesktopPlaybackEngine(
 
     @Volatile private var equalizerBalance = 0f
     @Volatile private var skipSilenceEnabled = false
-    @Volatile private var automixPerformance = AutomixPerformanceMode.BALANCED
-
-    /** Android's "Automix performance": how much CPU background analysis may use. */
-    fun setAutomixPerformance(mode: AutomixPerformanceMode) {
-        automixPerformance = mode
-    }
 
     /** Android's "Spatial audio". */
     /**
@@ -1910,22 +1574,11 @@ class DesktopPlaybackEngine(
         /** Avoid a decoder seek for sub-tick drift while an upgraded rendition is opening. */
         private const val UPGRADE_RESEEK_THRESHOLD_MS = 250L
 
-        /** Enough of a measurement on the incoming track to cue into it. */
-        val MEASURED_ENOUGH_TO_ENTER_ON = setOf(
-            TrackAnalysisState.ANALYSED,
-            TrackAnalysisState.REFINING,
-        )
-
         /** Where in a blend the player moves to the incoming song: halfway, as on Android. */
         private const val DISPLAY_SWITCH_AT = 0.5f
 
-        /** Jitter tolerated in a republished beat anchor; see [publishBlend]. */
-        private const val ANCHOR_TOLERANCE_NANOS = 25_000_000L
-
         private const val MIX_END_PADDING_FRAMES = 2_048
         private const val DEFAULT_TEMPO_OUTPUT_SAMPLES = 4_096
-        private const val TEMPO_STEP_PER_BEAT = 0.0075
-        private const val EASE_FALLBACK_SECONDS = 0.5
 
         /**
          * How far ahead of its transition a held-back addon track is resolved and opened. Android
@@ -1939,24 +1592,8 @@ class DesktopPlaybackEngine(
         private const val BLEND_WAIT_POLL_MS = 200L
 
         const val MAX_CROSSFADE_SECONDS = 12
-        const val AUTOMIX_FALLBACK_SECONDS = 6
 
-        // ---- outgoing-track FX for a smart transition the planner gave no echo ----
-        // A beat faster than this slices on the 1/8 (half-beat); slower material rolls on the 1/4
-        // (whole beat), so the repeat never turns into a machine-gun at high tempi.
-        private const val EIGHTH_NOTE_MAX_BEAT_SECONDS = 0.4
-        /** Where in the fade the roll freezes and starts repeating, and how loud its send peaks. */
-        private const val ROLL_START = 0.55f
-        private const val ROLL_SEND = 0.5f
-        /** Extra blend time so the roll and the reverb ring out after the outgoing dry is gone. */
-        private const val ROLL_TAIL_SECONDS = 0.9
-        private const val REVERB_TAIL_SECONDS = 1.4
-        /** The reverb opens over the last part of the fade and holds through the tail. */
-        private const val REVERB_START = 0.5f
-        private const val REVERB_SEND = 0.55f
-        /** The texture send widens or grits the outgoing tail over the last stretch of the fade. */
-        private const val TEXTURE_START = 0.4f
-        private const val TEXTURE_SEND = 0.4f
-        private const val TEXTURE_TAIL_SECONDS = 0.6
+        /** How long a blend lasts when nothing asked for a length, only that one should happen. */
+        const val MIX_FALLBACK_SECONDS = 6
     }
 }

@@ -50,13 +50,10 @@ data class DesktopPlaybackState(
     val streamSourceId: String? = null,
     /** Whether a source is still looking for a better copy of this track while it plays. */
     val searchingBetter: Boolean = false,
-    /** True while an analysed Automix handoff is audibly mixing, which the scrubber animates. */
+    /** True while a crossfade is audibly mixing two tracks, which the scrubber animates. */
     val mixing: Boolean = false,
     /** Where the next transition will sit, as fractions of this track — drawn on the scrubber. */
     val transitionWindow: com.music.bitchord.data.settings.TransitionWindow? = null,
-    /** How far Automix has got on this track and the next — see the player's line. */
-    val smartAnalysis: com.music.bitchord.data.settings.SmartAnalysis =
-        com.music.bitchord.data.settings.SmartAnalysis(),
 )
 
 internal data class DesktopStream(
@@ -224,3 +221,27 @@ internal object DesktopStreamClient {
             ?.substringAfterLast('/')
             ?.lowercase()
 }
+
+/** The queue facts the shared transition planner needs, from a [Song]. */
+internal fun Song.transitionInfo(durationMs: Long) = com.music.bitchord.playback.smart.TransitionTrackInfo(
+    id = videoId,
+    durationMs = durationMs,
+    title = title,
+    artist = artist,
+    album = albumName.orEmpty(),
+    albumId = albumId.orEmpty(),
+)
+
+/** "3:27" as seconds, or zero when there is nothing to read. */
+internal fun String?.durationSeconds(): Double {
+    val parts = this?.split(':')?.mapNotNull { it.trim().toIntOrNull() } ?: return 0.0
+    return when (parts.size) {
+        2 -> (parts[0] * 60 + parts[1]).toDouble()
+        3 -> (parts[0] * 3_600 + parts[1] * 60 + parts[2]).toDouble()
+        else -> 0.0
+    }
+}
+
+/** A file on this machine — a download or a local track — rather than anything streamed. */
+internal val DesktopStream.isLocalFile: Boolean
+    get() = !url.startsWith("http://", ignoreCase = true) && !url.startsWith("https://", ignoreCase = true)

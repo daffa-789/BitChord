@@ -12,8 +12,6 @@ import com.music.bitchord.data.lyrics.LyricsTranslation
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.settings.AudioQuality
 import com.music.bitchord.data.settings.LastPlayerScreen
-import com.music.bitchord.data.settings.MixBlend
-import com.music.bitchord.data.settings.SmartAnalysis
 import com.music.bitchord.data.settings.TransitionWindow
 import com.music.bitchord.ui.player.AudioOutputDevice
 import com.music.bitchord.ui.player.AudioOutputKind
@@ -207,11 +205,8 @@ internal object DesktopPlayerSettings : PlayerSettingsSource {
     override val reduceAnimation = MutableStateFlow(false)
     override val reduceDynamicBlur = MutableStateFlow(false)
     override val showNerdStats = MutableStateFlow(false)
-    override val smartAnalysis = MutableStateFlow(SmartAnalysis())
-    override val smartFadeEnabled = MutableStateFlow(false)
-    override val smartMixInProgress = MutableStateFlow(false)
-    override val smartMixBlend = MutableStateFlow<MixBlend?>(null)
-    override val smartTransitionWindow = MutableStateFlow<TransitionWindow?>(null)
+    override val mixInProgress = MutableStateFlow(false)
+    override val transitionWindow = MutableStateFlow<TransitionWindow?>(null)
     override val spotifyCanvasAutoHide = MutableStateFlow(true)
     override val syncedLyrics = MutableStateFlow(true)
     override val translationLanguage = MutableStateFlow("")

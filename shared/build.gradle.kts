@@ -18,8 +18,6 @@ kotlin {
         val jvmSharedMain by creating {
             dependsOn(commonMain.get())
             dependencies {
-                // Compile-only: the application supplies the runtime artifact itself.
-                compileOnly("com.microsoft.onnxruntime:onnxruntime:1.20.0")
                 // The network stack the lyrics providers and the YouTube Music client run on.
                 api("io.ktor:ktor-client-core:3.5.2")
                 api("io.ktor:ktor-client-okhttp:3.5.2")

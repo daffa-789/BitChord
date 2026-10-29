@@ -84,9 +84,6 @@ dependencies {
     // The shared player loads artwork through Coil, as the phone does.
     implementation("io.coil-kt.coil3:coil-network-okhttp:3.0.4")
 
-    // Automix runs the same two models the Android build does.
-    implementation("com.microsoft.onnxruntime:onnxruntime:1.29.0")
-
     // Decoding, resampling and demuxing for the audio engine.
     implementation("org.bytedeco:javacpp:$javacppVersion")
     implementation("org.bytedeco:javacpp:$javacppVersion:$nativeClassifier")
@@ -162,10 +159,8 @@ java {
     }
 }
 
-/** Builds the Automix analyser from the same C++ the Android app compiles. */
-// Per target, because both write the library under the same name and a Windows cross-build
-// otherwise left a `.dll` where the next Linux run looked for its `.so`.
-val analysisNativeDir = layout.buildDirectory.dir("native/$targetOs")
+/** The Windows media controls (SMTC), from the same C++ the Windows installer ships. */
+val smtcNativeDir = layout.buildDirectory.dir("native-smtc/$targetOs")
 
 /** The tiny Windows frame bridge is independent of the optional analyser and SMTC libraries. */
 val windowNativeDir = layout.buildDirectory.dir("native-window/$targetOs")
@@ -235,72 +230,58 @@ fun findOnPath(tool: String): File? {
 
 fun cmakeBinary(): String = findOnPath("cmake")?.absolutePath ?: "cmake"
 
-val buildAnalysisNative by tasks.registering {
-    val cmakeSource = project.file("native")
-    val outputDir = analysisNativeDir.get().asFile
+/**
+ * Builds the Win32 media controls (SMTC). Like the frame bridge it is Windows-only, and it is its
+ * own CMake project so one missing toolchain cannot hide the other.
+ */
+val buildSmtcNative by tasks.registering {
+    val cmakeSource = project.file("native/smtc")
+    val outputDir = smtcNativeDir.get().asFile
     val crossing = crossBuildingForWindows
     val toolchain = project.file("native/mingw-w64.cmake")
-    inputs.dir(rootProject.file("native/analyzer"))
-    inputs.dir(project.file("native/jni"))
-    inputs.dir(project.file("native"))
+    inputs.dir(cmakeSource)
     inputs.property("target", targetOs)
     outputs.dir(outputDir)
     onlyIf {
+        if (targetOs != "windows") return@onlyIf false
         val cmake = findOnPath("cmake")
-        if (cmake == null) {
+        val compiler = findOnPath(if (crossing) "x86_64-w64-mingw32-g++" else "g++")
+        val ninja = findOnPath("ninja")
+        if (cmake == null || compiler == null || ninja == null) {
             logger.lifecycle(
-                "no usable cmake — building without the Automix analyser. If cmake is installed, " +
-                    "a Gradle daemon started before it was on PATH may be in use: ./gradlew --stop",
+                "cmake, Ninja, or a MinGW C++ compiler is unavailable - the Windows build will " +
+                    "have no SMTC media controls.",
             )
         }
-        val compilerName = if (crossing) "x86_64-w64-mingw32-g++" else "g++"
-        val compiler = targetOs != "windows" || findOnPath(compilerName) != null
-        val ninja = targetOs != "windows" || findOnPath("ninja") != null
-        if (cmake != null && (!compiler || !ninja)) {
-            logger.lifecycle(
-                "$compilerName or Ninja not found — the Windows build will have no Automix analyser. " +
-                    "Install a MinGW C++ compiler and Ninja, then rebuild.",
-            )
-        }
-        cmake != null && compiler && ninja
+        cmake != null && compiler != null && ninja != null
     }
     doLast {
         val javaHome = System.getProperty("java.home")
-        val compiler = if (targetOs == "windows") {
-            findOnPath(if (crossing) "x86_64-w64-mingw32-g++" else "g++")
-                ?: error("the Windows C++ compiler disappeared while building the analyser")
-        } else {
-            null
-        }
-        val ninja = if (targetOs == "windows") {
-            findOnPath("ninja") ?: error("Ninja disappeared while building the analyser")
-        } else {
-            null
-        }
+        val compiler = findOnPath(if (crossing) "x86_64-w64-mingw32-g++" else "g++")
+            ?: error("MinGW C++ compiler disappeared while building the Windows media controls")
+        val ninja = findOnPath("ninja")
+            ?: error("Ninja disappeared while building the Windows media controls")
         providers.exec {
             commandLine(
                 buildList {
-                    addAll(listOf(cmakeBinary(), "-S", cmakeSource.absolutePath, "-B", outputDir.absolutePath))
-                    if (targetOs == "windows") {
-                        // The host may not have Visual Studio/nmake. Select the MinGW toolchain we
-                        // checked above and discard any generator cached by an earlier configure.
-                        addAll(
-                            listOf(
-                                "--fresh",
-                                "-G", "Ninja",
-                                "-DCMAKE_MAKE_PROGRAM=${ninja!!.absolutePath}",
-                                "-DCMAKE_CXX_COMPILER=${compiler!!.absolutePath}",
-                            ),
-                        )
-                    }
-                    add("-DCMAKE_BUILD_TYPE=Release")
+                    addAll(
+                        listOf(
+                            cmakeBinary(),
+                            "-S", cmakeSource.absolutePath,
+                            "-B", outputDir.absolutePath,
+                            "-G", "Ninja",
+                            "-DCMAKE_MAKE_PROGRAM=${ninja.absolutePath}",
+                            "-DCMAKE_CXX_COMPILER=${compiler.absolutePath}",
+                            "-DCMAKE_BUILD_TYPE=Release",
+                        ),
+                    )
                     if (crossing) add("-DCMAKE_TOOLCHAIN_FILE=${toolchain.absolutePath}")
                 },
             )
             environment("JAVA_HOME", javaHome)
         }.result.get().assertNormalExitValue()
         providers.exec {
-            commandLine(cmakeBinary(), "--build", outputDir.absolutePath, "--config", "Release", "-j", "4")
+            commandLine(cmakeBinary(), "--build", outputDir.absolutePath, "-j", "4")
             environment("JAVA_HOME", javaHome)
         }.result.get().assertNormalExitValue()
     }
@@ -365,19 +346,15 @@ val buildWindowNative by tasks.registering {
 }
 
 tasks.named<ProcessResources>("processResources") {
-    dependsOn(buildAnalysisNative, buildWindowNative)
-    from(analysisNativeDir) {
-        include("*.so", "*.dll", "*.dylib")
+    dependsOn(buildSmtcNative, buildWindowNative)
+    from(smtcNativeDir) {
+        include("*.dll")
         into("native")
     }
     from(windowNativeDir) {
         include("*.dll")
         into("native")
     }
-    // The Automix models already live in `src/main/resources/models`, which this task copies as
-    // part of the source set. An extra `from` of that same folder made Gradle fail the copy with
-    // "Entry models/… is a duplicate but no duplicate handling strategy has been set", which is
-    // what stopped `:desktopApp:run` from starting the app at all.
 }
 
 // Kotlin 2.4 no longer contributes this JVM target's compiler output to Gradle's plain `jar`
@@ -474,13 +451,13 @@ val windowsPortableAssemble by tasks.registering {
         }
         check(problems.isEmpty()) { "windowsPortable: " + problems.joinToString("; ") }
 
-        val analyser = File(analysisNativeDir.get().asFile, "bitchord_analysis.dll").isFile
+        val mediaControls = File(smtcNativeDir.get().asFile, "bitchord_smtc.dll").isFile
         logger.lifecycle(
-            if (analyser) {
-                "windowsPortable: verified — Compose runtime, Windows renderer, Windows FFmpeg, Automix analyser."
+            if (mediaControls) {
+                "windowsPortable: verified — Compose runtime, Windows renderer, Windows FFmpeg, SMTC media controls."
             } else {
-                "windowsPortable: verified, but no bitchord_analysis.dll — Automix will not run in this archive. " +
-                    "Rebuild with: nix-shell -p cmake pkgsCross.mingwW64.buildPackages.gcc"
+                "windowsPortable: verified, but no bitchord_smtc.dll: Windows media keys will not work in this archive. " +
+                    "Rebuild with cmake, Ninja and a MinGW C++ compiler on PATH."
             },
         )
     }

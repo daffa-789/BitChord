@@ -12,7 +12,7 @@ internal object DesktopWindowsAudio {
 
     private val available: Boolean by lazy {
         DesktopPlatform.isWindows &&
-            runCatching { DesktopAnalysisRuntime.loadNative(LIBRARY) }
+            runCatching { DesktopNativeRuntime.loadNative(LIBRARY) }
                 .onFailure { DesktopTrackLog.log("native Windows audio unavailable: ${it.message}") }
                 .isSuccess
     }

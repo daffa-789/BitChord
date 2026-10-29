@@ -11,8 +11,8 @@ import com.music.bitchord.data.lyrics.LyricsSource
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.settings.AudioQuality
 import com.music.bitchord.data.settings.LastPlayerScreen
-import com.music.bitchord.data.settings.SmartAnalysis
-import com.music.bitchord.data.settings.MixBlend
+
+
 import com.music.bitchord.data.settings.TransitionWindow
 import dev.chrisbanes.haze.HazeState
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -181,13 +181,10 @@ interface PlayerSettingsSource {
     val reduceAnimation: StateFlow<Boolean>
     val reduceDynamicBlur: StateFlow<Boolean>
     val showNerdStats: StateFlow<Boolean>
-    val smartAnalysis: StateFlow<SmartAnalysis>
-    val smartFadeEnabled: StateFlow<Boolean>
-    /** True only while an analysed Automix transition is audibly mixing two tracks. */
-    val smartMixInProgress: StateFlow<Boolean>
-    /** The Automix blend in flight, for the scrubber's beat glow; null between blends. */
-    val smartMixBlend: StateFlow<MixBlend?>
-    val smartTransitionWindow: StateFlow<TransitionWindow?>
+    /** True while a crossfade is audibly mixing two tracks. */
+    val mixInProgress: StateFlow<Boolean>
+    /** Where the next transition sits, for the scrubber's marker; null between plans. */
+    val transitionWindow: StateFlow<TransitionWindow?>
     val spotifyCanvasAutoHide: StateFlow<Boolean>
     val syncedLyrics: StateFlow<Boolean>
     val translationLanguage: StateFlow<String>

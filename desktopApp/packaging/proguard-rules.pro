@@ -33,8 +33,6 @@
 -dontwarn org.bytedeco.**
 
 # ONNX Runtime's JNI layer calls back into these.
--keep class ai.onnxruntime.** { *; }
--dontwarn ai.onnxruntime.**
 
 # Skiko and Compose's own native bridge.
 -keep class org.jetbrains.skia.** { *; }

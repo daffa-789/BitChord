@@ -37,7 +37,7 @@ internal object DesktopWindowsMedia {
 
     private val available: Boolean by lazy {
         if (!DesktopPlatform.isWindows) return@lazy false
-        runCatching { DesktopAnalysisRuntime.loadNative(LIBRARY) }
+        runCatching { DesktopNativeRuntime.loadNative(LIBRARY) }
             .onFailure { DesktopTrackLog.log("Windows media controls unavailable: ${it.message}") }
             .isSuccess
     }

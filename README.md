@@ -46,8 +46,7 @@
 #### Playback
 - **Search, browse and play** anything available on YouTube Music.
 - **Hi-Res lossless audio** — FLAC/ALAC from a configured module source, with YouTube Music as fallback.
-- **Gapless playback with true crossfade**, adjustable 0–12s.
-- **Automix** — DJ-style transitions with beat-matching and tempo-stretching.
+- **Gapless playback with true crossfade**, adjustable 0–12s, and an optional blend on a manual skip.
 - **Offline downloads** — save tracks with embedded metadata.
 - **Local music library** integration.
 - **Background playback** via a proper foreground media session.
