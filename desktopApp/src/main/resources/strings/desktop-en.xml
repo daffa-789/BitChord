@@ -20,7 +20,6 @@
     <string name="d_close_up_next">Close Up Next</string>
     <string name="d_closing_the_window_leaves_bitchord_in_the_tray_instead_o">Closing the window leaves BitChord in the tray instead of quitting</string>
     <string name="d_continue_playing">Continue Playing</string>
-    <string name="d_custom_module">Custom module</string>
     <string name="d_discord_rich_presence_last_fm_and_listenbrainz">Discord rich presence, Last.fm and ListenBrainz</string>
     <string name="d_dont_repeat_songs_in_current_session">Don’t repeat songs in current session</string>
     <string name="d_downloaded_songs_will_appear_here">Downloaded songs will appear here.</string>
@@ -38,7 +37,6 @@
     <string name="d_lyrics_available_click_to_view">Lyrics available • Click to view</string>
     <string name="d_lyrics_unavailable">Lyrics unavailable</string>
     <string name="d_mix_the_order_of_the_current_queue">Mix the order of the current queue</string>
-    <string name="d_module_source">Module source</string>
     <string name="d_music">MUSIC</string>
     <string name="d_my_music_source">My music source</string>
     <string name="d_name_optional">Name (optional)</string>

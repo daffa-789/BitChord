@@ -45,7 +45,7 @@
 
 #### Playback
 - **Search, browse and play** anything available on YouTube Music.
-- **Hi-Res lossless audio** — FLAC/ALAC from a configured module source, with YouTube Music as fallback.
+- **Hi-Res lossless audio** — FLAC/ALAC from an addon server you configure, with YouTube Music as fallback.
 - **Gapless playback with true crossfade**, adjustable 0–12s, and an optional blend on a manual skip.
 - **Offline downloads** — save tracks with embedded metadata.
 - **Local music library** integration.
@@ -57,7 +57,7 @@
 - **Spotify integration** — connect your account to play your playlists and Liked Songs.
 - **Discord Rich Presence** — in-app login, live track/artist/album and progress.
 - **Scrobbling** to Last.fm and ListenBrainz.
-- **Pluggable sources** — add, edit, test and health-check module sources.
+- **Pluggable sources** — add, edit, test and health-check addon servers over plain HTTP.
 
     </td>
     <td width="50%" valign="top">

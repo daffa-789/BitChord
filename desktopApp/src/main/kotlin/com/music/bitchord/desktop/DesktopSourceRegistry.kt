@@ -69,23 +69,6 @@ internal object DesktopSourceRegistry {
         override suspend fun matches(song: Song): List<Song> = DesktopAddonSource.matches(config, song)
     }
 
-    private class ModuleAdapter(
-        override val config: DesktopSourceConfig,
-    ) : SourceAdapter {
-        override val descriptor: DesktopSourceDescriptor
-            get() = config.descriptor()
-
-        override fun owns(song: Song): Boolean =
-            DesktopModuleSource.parseTrack(song.videoId)?.let { ref ->
-                ref.sourceId == null || ref.sourceId == config.id
-            } == true
-
-        override suspend fun resolve(song: Song, quality: String?): Result<DesktopStream?> =
-            DesktopModuleSource.stream(config, song, quality)
-
-        override suspend fun matches(song: Song): List<Song> = DesktopModuleSource.matches(config, song)
-    }
-
     private class JioAdapter(
         override val config: DesktopSourceConfig,
     ) : SourceAdapter {
@@ -187,9 +170,6 @@ internal object DesktopSourceRegistry {
             .map { config ->
                 when (config.kind) {
                     DesktopSourceKind.ADDON -> AddonAdapter(config)
-                    DesktopSourceKind.CUSTOM_MODULE,
-                    DesktopSourceKind.MODULE,
-                    -> ModuleAdapter(config)
                     DesktopSourceKind.JIOSAAVN -> JioAdapter(config)
                     DesktopSourceKind.YOUTUBE -> YouTubeAdapter(config)
                 }
@@ -213,14 +193,9 @@ internal object DesktopSourceRegistry {
         forDownload: Boolean = false,
     ): Result<DesktopStream> = runCatching {
         val available = playbackAdapters(quality, forDownload)
-        val moduleReference = DesktopModuleSource.parseTrack(song.videoId)
         val addonReference = DesktopAddonSource.parseTrack(song.videoId)
         val owned = when {
             addonReference != null -> available.firstOrNull { it.config.id == addonReference.sourceId }
-            moduleReference?.sourceId != null -> available.firstOrNull { it.config.id == moduleReference.sourceId }
-            moduleReference != null -> available.firstOrNull {
-                it.config.kind == DesktopSourceKind.CUSTOM_MODULE || it.config.kind == DesktopSourceKind.MODULE
-            }
             song.videoId.startsWith("jiosaavn:") -> available.firstOrNull { it.config.kind == DesktopSourceKind.JIOSAAVN }
             else -> null
         }
@@ -230,7 +205,7 @@ internal object DesktopSourceRegistry {
         // than refused the way a disabled source's row is.
         val heldBack = addonReference != null && owned == null &&
             configs().any { it.id == addonReference.sourceId && it.enabled && it.isComplete }
-        if (!heldBack && (addonReference != null || moduleReference != null || song.videoId.startsWith("jiosaavn:"))) {
+        if (!heldBack && (addonReference != null || song.videoId.startsWith("jiosaavn:"))) {
             if (owned == null) error("The source for this track is disabled or no longer configured")
             // This path has nothing to race.
             DesktopTrackLog.log(
@@ -311,9 +286,7 @@ internal object DesktopSourceRegistry {
         excludedSourceId: String? = null,
     ): Result<DesktopLiveResolution> = runCatching {
         val available = playbackAdapters(quality)
-        val owned = available.any { it.owns(song) } ||
-            DesktopModuleSource.parseTrack(song.videoId) != null ||
-            song.videoId.startsWith("jiosaavn:")
+        val owned = available.any { it.owns(song) } || song.videoId.startsWith("jiosaavn:")
         if (owned) {
             return@runCatching DesktopLiveResolution(resolve(song, quality, excludedSourceId).getOrThrow())
         }
@@ -516,7 +489,7 @@ internal object DesktopSourceRegistry {
         val eligible = sameLength.ifEmpty { matches }
         if (!wantsLossless) return eligible
         // Stable, so the confidence order the matcher produced survives inside each tier.
-        return eligible.sortedByDescending { it.sourceQuality == DesktopModuleSource.LOSSLESS }
+        return eligible.sortedByDescending { it.sourceQuality == DesktopSourceQuality.LOSSLESS }
     }
 
     /** Which of two renditions of the same recording is the better one. */
@@ -549,7 +522,6 @@ internal object DesktopSourceRegistry {
     /** Whether this row has a YouTube upload behind it to go back to. */
     fun hasYouTubeOriginal(song: Song): Boolean =
         DesktopAddonSource.parseTrack(song.videoId) == null &&
-            DesktopModuleSource.parseTrack(song.videoId) == null &&
             !song.videoId.startsWith("jiosaavn:") &&
             song.videoId.isNotBlank()
 

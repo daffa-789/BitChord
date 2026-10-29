@@ -18,7 +18,6 @@
     <string name="d_close_up_next">Tutup Berikutnya</string>
     <string name="d_closing_the_window_leaves_bitchord_in_the_tray_instead_o">Menutup jendela membuat BitChord tetap di baki, bukan keluar</string>
     <string name="d_continue_playing">Lanjutkan mendengarkan</string>
-    <string name="d_custom_module">Modul kustom</string>
     <string name="d_discord_rich_presence_last_fm_and_listenbrainz">Rich Presence Discord, Last.fm, dan ListenBrainz</string>
     <string name="d_dont_repeat_songs_in_current_session">Jangan ulangi lagu pada sesi ini</string>
     <string name="d_downloaded_songs_will_appear_here">Lagu yang diunduh akan muncul di sini.</string>
@@ -36,7 +35,6 @@
     <string name="d_lyrics_available_click_to_view">Lirik tersedia • Klik untuk melihat</string>
     <string name="d_lyrics_unavailable">Lirik tidak tersedia</string>
     <string name="d_mix_the_order_of_the_current_queue">Acak urutan antrean saat ini</string>
-    <string name="d_module_source">Sumber modul</string>
     <string name="d_music">MUSIK</string>
     <string name="d_my_music_source">Sumber musikku</string>
     <string name="d_name_optional">Nama (opsional)</string>

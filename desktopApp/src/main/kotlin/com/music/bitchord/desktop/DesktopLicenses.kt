@@ -82,12 +82,6 @@ internal object DesktopLicenses {
                     "Stream URL deobfuscation, the same component the Android build uses.",
                 ),
                 DesktopLicense(
-                    "GraalVM JavaScript",
-                    "UPL-1.0",
-                    "https://www.graalvm.org",
-                    "Runs source modules in a sandbox with no access to host classes.",
-                ),
-                DesktopLicense(
                     "dbus-java",
                     "MIT",
                     "https://github.com/hypfvieh/dbus-java",

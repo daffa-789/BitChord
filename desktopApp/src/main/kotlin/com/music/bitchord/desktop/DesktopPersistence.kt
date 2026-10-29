@@ -5,6 +5,8 @@ import com.music.bitchord.data.model.Song
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.decodeFromJsonElement
+import kotlinx.serialization.json.jsonArray
 import java.nio.charset.StandardCharsets
 import java.util.Base64
 import java.util.UUID
@@ -114,9 +116,7 @@ class DesktopPersistence {
         } else {
             legacy
         }
-        val stored = raw?.let {
-            runCatching { sourceJson.decodeFromString<List<DesktopSourceConfig>>(it) }.getOrNull()
-        }
+        val stored = raw?.let(::decodeSourceConfigs)
         // Something is stored and could not be read.
         if ((raw != null || protected != null) && stored == null) {
             DesktopTrackLog.log("stored sources could not be read; leaving them untouched")
@@ -125,10 +125,7 @@ class DesktopPersistence {
                 DesktopSourceConfig("youtube", DesktopSourceKind.YOUTUBE),
             )
         }
-        // A build-seeded module index is no longer carried, and the one this app used to ship has
-        // been withdrawn — it answers HTTP 404 now.
-        val initial = (stored ?: migrateLegacySources())
-            .filterNot { it.kind == DesktopSourceKind.MODULE }
+        val initial = stored ?: emptyList()
         val withBuiltIns = initial.toMutableList().apply {
             if (none { it.kind == DesktopSourceKind.JIOSAAVN }) {
                 add(
@@ -200,22 +197,22 @@ class DesktopPersistence {
     fun saveString(key: String, value: String) =
         DesktopPreferenceChunks.write(preferences, key, value)
 
-    /** A configured module index, when one is still set up. */
-    fun moduleIndexUrl(): String =
-        sourceConfigs().firstOrNull { it.kind == DesktopSourceKind.CUSTOM_MODULE }?.baseUrl.orEmpty()
-
-    /** The single module URL older desktop builds stored, as a source entry. */
-    private fun migrateLegacySources(): List<DesktopSourceConfig> {
-        val legacyUrl = string(KEY_MODULE_INDEX_URL).trim()
-        if (legacyUrl.isBlank()) return emptyList()
-        return listOf(
-            DesktopSourceConfig(
-                id = "custom-module",
-                kind = DesktopSourceKind.CUSTOM_MODULE,
-                baseUrl = legacyUrl,
-                enabled = sourceEnabled("module"),
-            ),
-        )
+    /**
+     * Reads the stored list one entry at a time when the whole of it will not decode. A build that
+     * no longer knows one source kind must still hand back the sources the listener did configure,
+     * rather than reporting the whole list unreadable and falling back to the built-ins.
+     */
+    private fun decodeSourceConfigs(raw: String): List<DesktopSourceConfig>? {
+        runCatching { sourceJson.decodeFromString<List<DesktopSourceConfig>>(raw) }.getOrNull()?.let { return it }
+        val entries = runCatching { sourceJson.parseToJsonElement(raw).jsonArray }.getOrNull() ?: return null
+        val kept = entries.mapNotNull { element ->
+            runCatching { sourceJson.decodeFromJsonElement<DesktopSourceConfig>(element) }.getOrNull()
+        }
+        if (kept.isEmpty() && entries.isNotEmpty()) return null
+        if (kept.size != entries.size) {
+            DesktopTrackLog.log("left out " + (entries.size - kept.size) + " stored source(s) this build no longer offers")
+        }
+        return kept
     }
 
     private fun readSongs(key: String): List<Song> = readLines(key).mapNotNull(::decodeSong)

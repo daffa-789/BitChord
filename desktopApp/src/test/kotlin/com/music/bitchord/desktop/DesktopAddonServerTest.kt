@@ -216,7 +216,7 @@ class DesktopAddonServerTest {
             val config = DesktopSourceConfig("addon-atmos", DesktopSourceKind.ADDON, baseUrl = base)
             val song = (DesktopAddonSource.search(config, "immersive", 5).getOrThrow().single() as SearchResult.Track).song
 
-            assertEquals(DesktopModuleSource.DOLBY, song.sourceQuality)
+            assertEquals(DesktopSourceQuality.DOLBY, song.sourceQuality)
             val stream = assertNotNull(DesktopAddonSource.stream(config, song, "LOSSLESS").getOrThrow())
             assertTrue(stream.isDolbyAtmos)
             assertEquals("eac3-joc", stream.format.codec)

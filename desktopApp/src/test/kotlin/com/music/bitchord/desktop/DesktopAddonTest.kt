@@ -137,20 +137,6 @@ class DesktopAddonTest {
         assertEquals("https://addon.example", found.baseUrl)
     }
 
-    @Test
-    fun aModuleIndexIsIdentifiedAsOneAndCounted() {
-        val body = """
-            {"category:music":[
-              {"id":"one","name":"One","download":"one.js"},
-              {"id":"two","name":"Two","download":"two.js"}
-            ]}
-        """.trimIndent()
-
-        val found = DesktopSourceFormats.detect(body, "https://index.example/index.json")
-
-        assertTrue(found is DesktopDetectedFormat.ModuleIndex)
-        assertEquals(2, found.moduleCount)
-    }
 
     @Test
     fun aRefusalSaysWhatWasFoundRatherThanWhatWasWanted() {
@@ -169,9 +155,8 @@ class DesktopAddonTest {
         assertTrue(wrongResources is DesktopDetectedFormat.Unsupported)
         assertTrue(wrongResources.reason.contains("search"))
 
-        val emptyIndex = DesktopSourceFormats.detect("""{"category:music":[]}""")
-        assertTrue(emptyIndex is DesktopDetectedFormat.Unsupported)
-        assertTrue(emptyIndex.reason.contains("no modules"))
+        val indexLike = DesktopSourceFormats.detect("""{"category:music":[]}""")
+        assertTrue(indexLike is DesktopDetectedFormat.Unsupported)
     }
 
     // ── Source order ─────────────────────────────────────────────────────
@@ -182,12 +167,11 @@ class DesktopAddonTest {
             DesktopSourceConfig("youtube", DesktopSourceKind.YOUTUBE),
             DesktopSourceConfig("jio", DesktopSourceKind.JIOSAAVN),
             DesktopSourceConfig("addon-2", DesktopSourceKind.ADDON, baseUrl = "https://b.example"),
-            DesktopSourceConfig("legacy", DesktopSourceKind.MODULE, baseUrl = "https://m.example"),
             DesktopSourceConfig("addon-1", DesktopSourceKind.ADDON, baseUrl = "https://a.example"),
         )
 
         assertEquals(
-            listOf("addon-2", "addon-1", "legacy", "jio", "youtube"),
+            listOf("addon-2", "addon-1", "jio", "youtube"),
             configs.inSourceOrder().map { it.id },
         )
     }
@@ -195,7 +179,6 @@ class DesktopAddonTest {
     @Test
     fun onlyTheSourcesSomebodyAddedCanBeRemoved() {
         assertTrue(DesktopSourceConfig("a", DesktopSourceKind.ADDON).isUserAdded)
-        assertTrue(DesktopSourceConfig("c", DesktopSourceKind.CUSTOM_MODULE).isUserAdded)
         assertFalse(DesktopSourceConfig("j", DesktopSourceKind.JIOSAAVN).isUserAdded)
         assertFalse(DesktopSourceConfig("y", DesktopSourceKind.YOUTUBE).isUserAdded)
     }

@@ -16,7 +16,6 @@ class DesktopQualityTest {
         // No lossless answer is wanted, and a source that can serve one is the slow half of the
         // list.
         assertFalse(DesktopAudioQuality.HIGH.permits(DesktopSourceKind.ADDON))
-        assertFalse(DesktopAudioQuality.HIGH.permits(DesktopSourceKind.CUSTOM_MODULE))
         assertTrue(DesktopAudioQuality.HIGH.permits(DesktopSourceKind.JIOSAAVN))
         // The lower rungs are YouTube's own ladder and nothing else.
         listOf(DesktopAudioQuality.MEDIUM, DesktopAudioQuality.LOW).forEach { rung ->

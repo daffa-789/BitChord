@@ -47,7 +47,6 @@ private fun localProperty(name: String): String = rootProject.file("local.proper
     ?.takeIf { it.isNotBlank() }
     ?: System.getenv(name).orEmpty().trim()
 
-val desktopModuleIndexUrl = localProperty("MODULE_INDEX_URL")
 
 // Last.fm signs every request with these, so signing in from inside the app
 // needs them at hand. Supplied locally and never committed, as on Android.
@@ -135,10 +134,6 @@ dependencies {
     // Same URL deobfuscation helper used by Android's StreamResolver.
     implementation("com.github.TeamNewPipe:NewPipeExtractor:v0.26.3")
 
-    // JVM equivalent of Android's QuickJS module host.
-    implementation("org.graalvm.polyglot:polyglot:24.1.2")
-    implementation("org.graalvm.polyglot:js:24.1.2")
-    implementation("org.graalvm.js:js-language:24.1.2")
 
     testImplementation(kotlin("test"))
 }
@@ -377,7 +372,6 @@ val windowsPortableAssemble by tasks.registering {
     val appJar = tasks.named<Jar>("jar").flatMap { it.archiveFile }
     val runtime = configurations.named("runtimeClasspath")
     val version = appVersion
-    val moduleIndex = desktopModuleIndexUrl
     val lastfmKey = lastfmApiKey
     val lastfmSharedSecret = lastfmSecret
     val mainClass = composeMainClass
@@ -385,7 +379,6 @@ val windowsPortableAssemble by tasks.registering {
     inputs.file(appJar)
     inputs.files(runtime)
     inputs.property("version", version)
-    inputs.property("moduleIndex", moduleIndex)
     inputs.property("lastfm", lastfmKey.isNotBlank())
     inputs.property("mainClass", mainClass)
     outputs.dir(stage)
@@ -415,7 +408,6 @@ val windowsPortableAssemble by tasks.registering {
                 appendLine("set \"RUNNER=java\"")
                 appendLine("if defined JAVA_HOME set \"RUNNER=%JAVA_HOME%\\bin\\java\"")
                 append("\"%RUNNER%\" -Dbitchord.version=$version")
-                if (moduleIndex.isNotBlank()) append(" -Dbitchord.module.index=$moduleIndex")
                 if (lastfmKey.isNotBlank() && lastfmSharedSecret.isNotBlank()) {
                     append(" -Dbitchord.lastfm.key=$lastfmKey -Dbitchord.lastfm.secret=$lastfmSharedSecret")
                 }
@@ -484,9 +476,6 @@ compose.desktop {
         jvmArgs("-Xmx512m")
         jvmArgs("-XX:+UseG1GC", "-XX:G1PeriodicGCInterval=20000", "-XX:G1PeriodicGCSystemLoadThreshold=0")
         jvmArgs("-Dbitchord.version=$appVersion")
-        if (desktopModuleIndexUrl.isNotBlank()) {
-            jvmArgs("-Dbitchord.module.index=$desktopModuleIndexUrl")
-        }
         if (lastfmApiKey.isNotBlank() && lastfmSecret.isNotBlank()) {
             jvmArgs("-Dbitchord.lastfm.key=$lastfmApiKey", "-Dbitchord.lastfm.secret=$lastfmSecret")
         }
@@ -525,11 +514,9 @@ compose.desktop {
                 "java.naming",
                 "java.net.http",
                 "java.prefs",
-                "java.scripting",
                 "java.sql",
                 "java.xml",
                 "jdk.crypto.ec",
-                "jdk.dynalink",
                 // JavaFX WebEngine returns JavaScript objects through netscape.javascript.JSObject.
                 // Without this module the slim production runtime crashes in twkExecuteScript,
                 // while development runs work because the full JDK already contains it.

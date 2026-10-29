@@ -3928,28 +3928,21 @@ fun BitChordDesktopApp() {
                                         }
                                         persistence.saveSourceConfigs(next)
                                         sourceConfigs = persistence.sourceConfigs()
-                                        DesktopModuleSource.reload()
                                     },
                                     onSaveSource = { saved ->
                                         // Replaced by id, so any number of addons can be configured.
-                                        val without = sourceConfigs.filterNot {
-                                            it.id == saved.id ||
-                                                (saved.kind == DesktopSourceKind.CUSTOM_MODULE &&
-                                                    it.kind == DesktopSourceKind.CUSTOM_MODULE)
-                                        }
+                                        val without = sourceConfigs.filterNot { it.id == saved.id }
                                         persistence.saveSourceConfigs((without + saved).inSourceOrder())
                                         sourceConfigs = persistence.sourceConfigs()
                                         // Whatever was held for this entry describes a server that may no
                                         // longer be the one selected.
                                         DesktopAddonSource.forget(saved.id)
-                                        DesktopModuleSource.reload()
                                     },
                                     onRemoveSource = { config ->
                                         if (config.isUserAdded) {
                                             persistence.saveSourceConfigs(sourceConfigs.filterNot { it.id == config.id })
                                             sourceConfigs = persistence.sourceConfigs()
                                             DesktopAddonSource.forget(config.id)
-                                            DesktopModuleSource.reload()
                                         }
                                     },
                                     onMoveSource = { config, delta ->
@@ -3960,11 +3953,7 @@ fun BitChordDesktopApp() {
                                     onTestSource = { candidate ->
                                         sourceStatus = sourceStatus + (candidate.id to "Checking source…")
                                         scope.launch {
-                                            val health = if (candidate.kind == DesktopSourceKind.ADDON) {
-                                                DesktopAddonSource.health(candidate)
-                                            } else {
-                                                DesktopModuleSource.health(candidate)
-                                            }
+                                            val health = DesktopAddonSource.health(candidate)
                                             health.fold(
                                                 onSuccess = { sourceStatus = sourceStatus + (candidate.id to it) },
                                                 onFailure = {
@@ -6619,7 +6608,6 @@ private fun DesktopSourceSettingsRow(
         Icon(
             when (config.kind) {
                 DesktopSourceKind.ADDON -> Icons.Rounded.Extension
-                DesktopSourceKind.CUSTOM_MODULE, DesktopSourceKind.MODULE -> Icons.Rounded.Extension
                 DesktopSourceKind.JIOSAAVN -> Icons.Rounded.GraphicEq
                 DesktopSourceKind.YOUTUBE -> Icons.Rounded.PlayCircle
             },
@@ -6713,14 +6701,7 @@ private fun DesktopSourceEditorDialog(
                                 if (thenSave) onSave(named)
                             }
                         }
-                        is DesktopDetectedFormat.ModuleIndex -> {
-                            val asIndex = candidate.copy(
-                                kind = DesktopSourceKind.CUSTOM_MODULE,
-                                baseUrl = detected.url.ifBlank { candidate.baseUrl },
-                            )
-                            message = "Module index · ${detected.moduleCount} modules"
-                            if (thenSave) onSave(asIndex)
-                        }
+
                         is DesktopDetectedFormat.Unsupported -> message = detected.reason
                     }
                 },

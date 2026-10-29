@@ -24,25 +24,6 @@ internal enum class DesktopSourceKind(
         rank = 0,
     ),
 
-    /** A module index the user pointed at themselves. */
-    CUSTOM_MODULE(
-        label = DesktopStrings["d_custom_module", "Custom module"],
-        detail = "Your own compatible module index. Tried before the built-in one.",
-        labels = listOf("FLAC", "Lossless", "Hi-Res", "Plugins"),
-        needsServer = true,
-        supportsLossless = true,
-        rank = 0,
-    ),
-
-    /** A module index seeded from a build-time URL. */
-    MODULE(
-        label = DesktopStrings["d_module_source", "Module source"],
-        detail = "JavaScript modules for FLAC, lossless, Hi-Res and more.",
-        labels = listOf("FLAC", "Lossless", "Hi-Res", "Plugins"),
-        needsServer = true,
-        supportsLossless = true,
-        rank = 1,
-    ),
     JIOSAAVN(
         label = "JioSaavn",
         detail = "High Quality · 320kbps",
@@ -119,7 +100,7 @@ internal data class DesktopSourceConfig(
 
     /** Whether this entry exists because the user added it, and so can be removed. */
     val isUserAdded: Boolean
-        get() = kind == DesktopSourceKind.ADDON || kind == DesktopSourceKind.CUSTOM_MODULE
+        get() = kind == DesktopSourceKind.ADDON
 }
 
 /**

@@ -622,9 +622,9 @@ internal object DesktopAddonSource {
                             "${it / 60}:${"%02d".format(Locale.ROOT, it % 60)}"
                         },
                         sourceQuality = if (track.isDolbyAtmos) {
-                            DesktopModuleSource.DOLBY
+                            DesktopSourceQuality.DOLBY
                         } else {
-                            DesktopModuleSource.qualityTier("${track.audioQuality} ${track.format}")
+                            DesktopSourceQuality.tier("${track.audioQuality} ${track.format}")
                         },
                         sourceHiRes = !track.isDolbyAtmos && track.isHiRes,
                     ),
@@ -663,7 +663,7 @@ internal object DesktopAddonSource {
             ?: return@runCatching null
         refreshPolicy(config)
         val tier = tierFor(quality)
-        val stereoOnly = picked && song.sourceQuality != null && song.sourceQuality != DesktopModuleSource.DOLBY
+        val stereoOnly = picked && song.sourceQuality != null && song.sourceQuality != DesktopSourceQuality.DOLBY
         val outcome = client(config).stream(reference.trackId, tier, stereoOnly)
         val answer = outcome.getOrNull()
         if (answer == null) {
@@ -737,7 +737,7 @@ internal object DesktopAddonSource {
                 ?.lowercase(Locale.ROOT)?.takeIf { it in AUDIO_CODECS }
             ?: if (answer.isDolbyAtmos) {
                 "eac3-joc"
-            } else if (DesktopModuleSource.qualityTier(answer.qualityText) == DesktopModuleSource.LOSSLESS) {
+            } else if (DesktopSourceQuality.tier(answer.qualityText) == DesktopSourceQuality.LOSSLESS) {
                 "flac"
             } else {
                 url.substringBefore('?').substringAfterLast('.')
@@ -799,7 +799,6 @@ internal sealed interface DesktopDetectedFormat {
     data class Addon(val manifest: DesktopAddonManifest, val baseUrl: String) : DesktopDetectedFormat
 
     /** A module index: JS plugins listed under `category:*` keys. */
-    data class ModuleIndex(val moduleCount: Int, val url: String) : DesktopDetectedFormat
 
     data class Unsupported(val reason: String) : DesktopDetectedFormat
 }
@@ -857,16 +856,6 @@ internal object DesktopSourceFormats {
             ?: return DesktopDetectedFormat.Unsupported(
                 "That JSON is a list, and every format BitChord reads is an object",
             )
-
-        // A module index first: its marker is unmistakable and belongs to no other format.
-        if (obj.keys.any { it.startsWith("category:") }) {
-            val modules = runCatching { DesktopModuleSource.parseIndex(body) }.getOrDefault(emptyList())
-            return if (modules.isEmpty()) {
-                DesktopDetectedFormat.Unsupported("That module index listed no modules")
-            } else {
-                DesktopDetectedFormat.ModuleIndex(modules.size, url)
-            }
-        }
 
         val looksLikeManifest = obj["resources"] is JsonArray ||
             (obj.containsKey("id") && (obj.containsKey("name") || obj.containsKey("version")))
