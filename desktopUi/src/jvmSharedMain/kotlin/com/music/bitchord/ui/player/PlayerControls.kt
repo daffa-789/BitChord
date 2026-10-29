@@ -135,6 +135,37 @@ private const val AUTOPLAY_TAP_WINDOW_MS = 700L
 
 
 /**
+ * The small caption naming what the player is playing out of.
+ */
+@Composable
+internal fun PlaybackOriginCaption(
+    text: String,
+    onClick: () -> Unit,
+    textAlign: TextAlign,
+    /** Inside the touch target, so it widens what a finger can hit. */
+    contentPadding: PaddingValues,
+    modifier: Modifier = Modifier,
+) {
+    Text(
+        text = text,
+        style = MaterialTheme.typography.labelSmall.copy(
+            shadow = Shadow(
+                color = Color.Black.copy(alpha = 0.55f),
+                offset = Offset(0f, 1f),
+                blurRadius = 4f,
+            ),
+        ),
+        color = LocalPlayerTint.current,
+        maxLines = 1,
+        overflow = TextOverflow.Ellipsis,
+        textAlign = textAlign,
+        modifier = modifier
+            .clickable(onClick = onClick)
+            .padding(contentPadding),
+    )
+}
+
+/**
  * The seek bar, with elapsed and remaining either side under it and
  * [centerLabel] — the quality badge — between them.
  */
@@ -759,6 +790,7 @@ private val BOTTOM_ACTION_SIZE = 44.dp
 // One width for every segment, so the capsule keeps its shape and never shifts
 // the control beside it when a segment changes.
 private val PILL_SEGMENT_WIDTH = 64.dp
+private val PILL_HEADPHONES_SIZE = 23.dp
 
 /**
  * How long the capsule takes to cross from the middle of the row to the lyrics

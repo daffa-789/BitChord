@@ -230,6 +230,12 @@ data class OutputFormatUi(
     val carriesHiRes: Boolean = false,
 )
 
+sealed interface LyricsTranslationResult {
+    data class Translated(val lines: List<LyricLine>) : LyricsTranslationResult
+    data class SameLanguage(val language: String) : LyricsTranslationResult
+    data object Unavailable : LyricsTranslationResult
+}
+
 sealed interface LyricsRomanizationResult {
     data class Romanized(val lines: List<LyricLine>) : LyricsRomanizationResult
     data object AlreadyRomanized : LyricsRomanizationResult
