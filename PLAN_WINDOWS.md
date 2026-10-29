@@ -172,11 +172,14 @@ flowchart TD
   - Jendela kini dibuka sesuai *work area* layar (`openingWindowSize()`), jadi di layar 1080p dengan scaling 125–156% jendela tidak lagi terbuka lebih tinggi dari layar dan baris Settings tidak hilang di bawah.
 
 #### Fase 6: Mini-Player, System Tray & Distribusi
-- [ ] Aktifkan `DesktopAwtTray.kt` agar aplikasi bisa bersembunyi di System Tray Windows saat di-minimize.
+- [x] `DesktopAwtTray.kt` aktif — ikon dan tray Windows dipasang lewat `DesktopStatusNotifier`
+  (`setIcon`/`start`/`update`/`stop`), bersama toggle "ikon tray" dan "tetap putar saat ditutup" di
+  Settings.
 - [ ] Tambahkan toggle *Click-Through Mode* (`WS_EX_TRANSPARENT`) via JNI jika diinginkan.
 - [ ] Tambahkan entri "Dynamic Island" di menu tray.
-- [ ] Terjemahkan label menu/settings island ke katalog `desktop-id.xml` (sekarang masih Inggris, sama seperti fallback bahasa lain).
-- [ ] Paketkan menjadi installer Windows (`.msi` / executable mandiri) via Gradle task `packageMsi` / `packageDistributionForCurrentOS`.
+- [x] Label island sudah diterjemahkan: 48 kunci `d_island_*` ada di `desktop-en.xml` **dan**
+  `desktop-id.xml`, dan uji katalog memastikan tidak ada kunci desktop yang hilang di bahasa lain.
+- [ ] Paketkan menjadi installer Windows (`.msi` / executable mandiri) via Gradle task `packageMsi` / `packageDistributionForCurrentOS`. Tugas `windowsPortable` sudah terverifikasi menghasilkan folder berjalan dengan native Windows di dalam jar.
 
 ### Fase 7: Optimasi & Pemangkasan Fitur (Klien Windows Saja)
 
