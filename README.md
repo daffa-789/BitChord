@@ -14,7 +14,6 @@
 [![Latest release](https://img.shields.io/github/v/release/kushagrasinghx/BitChord?style=for-the-badge&labelColor=0d1117)](https://github.com/kushagrasinghx/BitChord/releases)
 [![License](https://img.shields.io/github/license/kushagrasinghx/BitChord?style=for-the-badge&labelColor=0d1117)](https://github.com/kushagrasinghx/BitChord/blob/main/LICENSE)
 [![Downloads](https://img.shields.io/github/downloads/kushagrasinghx/BitChord/total?style=for-the-badge&labelColor=0d1117)](https://github.com/kushagrasinghx/BitChord/releases)
-[![Listening now](https://api.bitchord.kushagrasingh.in/api/stats/live/badge.svg)](https://api.bitchord.kushagrasingh.in/api/stats/live)
 
 <br/>
 
@@ -70,7 +69,7 @@
 - **Frosted-glass UI** — Telegram-style translucent bars via Haze, Material 3 theming.
 
 #### Controls & Tweaks
-- **Per-network audio quality** — separate quality ceilings for Wi-Fi and mobile data.
+- **Audio quality ceiling** — pick where on the ladder a track starts, from ~64 kbps up to bit-exact lossless.
 - **Playback speed control** (0.5×–2.0×) and **skip silence**.
 - **Sleep timer** — fixed presets or "stop after this track".
 - **System equalizer** integration.
@@ -88,9 +87,26 @@
 
 <h1><a id="download"></a>Download</h1>
 
-<b>BitChord Desktop for Windows, macOS, and Linux</b>
+<b>BitChord Desktop — Windows and Linux</b>
 
-Grab the latest installer from the [Releases](https://github.com/kushagrasinghx/BitChord/releases) page.
+This tree is the desktop client only: the Compose Desktop app, built on the JVM. It runs on
+Windows 11 (Fluent window frame, Dynamic Island lyrics, SMTC media keys) and on Linux (MPRIS
+media controls and the StatusNotifier tray). Prebuilt installers for the upstream project live in
+the [Releases](https://github.com/kushagrasinghx/BitChord/releases) page; this fork is built from
+source:
+
+```bash
+# JDK 21 (Temurin) is required; point org.gradle.java.home at it in gradle.properties.
+./gradlew :desktopApp:run                  # run it
+./gradlew :desktopApp:packageMsi           # Windows installer
+./gradlew :desktopApp:windowsPortable      # Windows portable zip, no installer needed
+
+# on Linux
+./gradlew :desktopApp:packageDeb
+```
+
+On Windows, `cmake`, `Ninja` and a MinGW C++ compiler on `PATH` add the native window frame and
+SMTC media keys; without them the app still builds and runs, just without those two.
 
 
 </div>
