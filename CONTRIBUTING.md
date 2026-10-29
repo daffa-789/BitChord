@@ -42,7 +42,8 @@ Build and run:
 
 Windows:
 ```powershell
-.\gradlew.bat assembleDevDebug
+.\gradlew.bat :desktopApp:run
+.\gradlew.bat :desktopApp:packageMsi
 ```
 
 Tests:
