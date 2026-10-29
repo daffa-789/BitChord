@@ -71,7 +71,8 @@ import kotlinx.coroutines.flow.MutableStateFlow
 
 /** Global Manager to control and feed state into the Floating Dynamic Island Lyrics. */
 internal object DesktopFloatingLyricsManager {
-    val isEnabled = MutableStateFlow(false)
+    private val persistence get() = DesktopPersistence()
+    val isEnabled = MutableStateFlow(DesktopPersistence().boolean("floating_lyrics_enabled", true))
     val isLocked = MutableStateFlow(false)
 
     // Playback state fed from DesktopApp
@@ -88,7 +89,14 @@ internal object DesktopFloatingLyricsManager {
     var onToggleRepeat: (() -> Unit)? = null
 
     fun toggle() {
-        isEnabled.value = !isEnabled.value
+        val next = !isEnabled.value
+        isEnabled.value = next
+        persistence.saveBoolean("floating_lyrics_enabled", next)
+    }
+
+    fun setEnabled(enabled: Boolean) {
+        isEnabled.value = enabled
+        persistence.saveBoolean("floating_lyrics_enabled", enabled)
     }
 }
 
@@ -110,7 +118,7 @@ internal fun FloatingLyricsWindow() {
     )
 
     Window(
-        onCloseRequest = { DesktopFloatingLyricsManager.isEnabled.value = false },
+        onCloseRequest = { DesktopFloatingLyricsManager.setEnabled(false) },
         title = "BitChord - Dynamic Island Lyrics",
         state = windowState,
         alwaysOnTop = true,
@@ -407,7 +415,7 @@ private fun DynamicIslandLyricsContent(onDragWindow: (Int, Int) -> Unit) {
                     icon = Icons.Rounded.Close,
                     tooltip = "Tutup Dynamic Island",
                     hoverBg = Color(0xFFC42B1C),
-                    onClick = { DesktopFloatingLyricsManager.isEnabled.value = false },
+                    onClick = { DesktopFloatingLyricsManager.setEnabled(false) },
                 )
             }
         }
