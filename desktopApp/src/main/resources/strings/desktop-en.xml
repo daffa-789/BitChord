@@ -65,6 +65,11 @@
     <string name="d_island_bottom_center">Bottom center</string>
     <string name="d_island_bottom_left">Bottom left</string>
     <string name="d_island_bottom_right">Bottom right</string>
+    <string name="d_island_click_through">Click-through</string>
+    <string name="d_island_click_through_subtitle">Clicks over the capsule go to the window underneath. Switch it off here to grab the capsule again.</string>
+    <string name="d_island_up_next">Up next</string>
+    <string name="d_island_up_next_more">…and more in the queue</string>
+    <string name="d_island_open_app">Open BitChord…</string>
     <string name="d_island_collapse">Collapse when idle</string>
     <string name="d_island_collapse_subtitle">Shrinks to the Mini pill while the pointer is away, and grows back when it returns</string>
     <string name="d_island_controls">Transport controls</string>

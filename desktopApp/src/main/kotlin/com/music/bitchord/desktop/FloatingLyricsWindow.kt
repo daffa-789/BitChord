@@ -114,12 +114,24 @@ internal object DesktopFloatingLyricsManager {
 
     val repeatMode = MutableStateFlow(DesktopRepeatMode.OFF)
 
+    /**
+     * The queue as the app holds it, and the row it stands on — what the island menu's "Up next"
+     * section reads. Fed from the app alongside the song, so the capsule can start any song the
+     * queue holds (YouTube Music's own radio and playlists included) without the main window
+     * being open.
+     */
+    val queueSongs = MutableStateFlow<List<Song>>(emptyList())
+    val queueIndex = MutableStateFlow(0)
+
     // Player action callbacks, wired once by the app composable.
     var onPlayPause: (() -> Unit)? = null
     var onNext: (() -> Unit)? = null
     var onPrevious: (() -> Unit)? = null
     var onToggleRepeat: (() -> Unit)? = null
     var onOpenNowPlaying: (() -> Unit)? = null
+
+    /** Jumps the queue to a row's index — the same move the queue sheet's tap makes. */
+    var onPlayQueueIndex: ((Int) -> Unit)? = null
 
     /** Opens Settings, where the island is configured. */
     var onOpenSettings: (() -> Unit)? = null
@@ -130,12 +142,6 @@ internal object DesktopFloatingLyricsManager {
     fun toggle() = DesktopDynamicIslandSettings.toggle()
 
     fun setEnabled(enabled: Boolean) = DesktopDynamicIslandSettings.setEnabled(enabled)
-}
-
-/** Stub kept for compatibility: the island lives inside the main window, not in a second one. */
-@Composable
-internal fun FloatingLyricsWindow() {
-    // No-op: the Dynamic Island is unified directly inside BitChord's main window.
 }
 
 /**
@@ -746,8 +752,11 @@ internal fun DynamicIslandMenu(
     val inTopBar by DesktopDynamicIslandSettings.inTopBar.collectAsState()
     val layout by DesktopDynamicIslandSettings.layout.collectAsState()
     val locked by DesktopDynamicIslandSettings.locked.collectAsState()
+    val clickThrough by DesktopDynamicIslandSettings.clickThrough.collectAsState()
     val song by DesktopFloatingLyricsManager.currentSong.collectAsState()
     val isPlaying by DesktopFloatingLyricsManager.isPlaying.collectAsState()
+    val queueSongs by DesktopFloatingLyricsManager.queueSongs.collectAsState()
+    val queueIndex by DesktopFloatingLyricsManager.queueIndex.collectAsState()
 
     DropdownMenu(expanded = expanded, onDismissRequest = onDismissRequest) {
         MenuHeader(
@@ -776,6 +785,28 @@ internal fun DynamicIslandMenu(
             onDismissRequest()
         }
 
+        // The queue's tail, one row per song: tapping one starts it, exactly as tapping the row in
+        // the queue sheet does. Kept to a handful so a radio queue of fifty does not become a
+        // menu of fifty — the rest are one "Open BitChord" away.
+        val upcoming = queueSongs.drop(queueIndex + 1)
+        if (upcoming.isNotEmpty()) {
+            HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
+            MenuCaption(DesktopStrings["d_island_up_next", "Up next"])
+            upcoming.take(UP_NEXT_SHOWN).forEachIndexed { at, up ->
+                MenuAction(
+                    label = "${up.title} — ${up.artist}",
+                    icon = BitChordIcons.MusicNote,
+                    onClick = {
+                        DesktopFloatingLyricsManager.onPlayQueueIndex?.invoke(queueIndex + 1 + at)
+                        onDismissRequest()
+                    },
+                )
+            }
+            if (upcoming.size > UP_NEXT_SHOWN) {
+                MenuCaption(DesktopStrings["d_island_up_next_more", "…and more in the queue"])
+            }
+        }
+
         HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
 
         MenuCheck(DesktopStrings["d_island_floating", "Floating island"], enabled) {
@@ -800,10 +831,21 @@ internal fun DynamicIslandMenu(
                 DesktopDynamicIslandSettings.resetOffset()
                 onDismissRequest()
             }
+            if (DesktopPlatform.isWindows) {
+                MenuCheck(DesktopStrings["d_island_click_through", "Click-through"], clickThrough) {
+                    DesktopDynamicIslandSettings.setClickThrough(it)
+                }
+            }
         }
 
         HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
 
+        MenuAction(DesktopStrings["d_island_open_app", "Open BitChord…"], BitChordIcons.MusicNote) {
+            onDismissRequest()
+            // "Hide BitChord" put the window away; this is the way back, landing on the player.
+            DesktopWindowVisibility.show()
+            DesktopFloatingLyricsManager.onOpenNowPlaying?.invoke()
+        }
         MenuAction(DesktopStrings["d_island_hide_app", "Hide BitChord"], Icons.Rounded.VisibilityOff) {
             onDismissRequest()
             // The island is its own window, so this puts the main window away without taking the
@@ -839,6 +881,9 @@ internal fun DesktopIslandToolbarButton() {
     }
 }
 
+/** How many "Up next" rows the island menu lists before pointing at the app for the rest. */
+private const val UP_NEXT_SHOWN = 6
+
 @Composable
 private fun MenuHeader(text: String) {
     Text(
@@ -865,7 +910,13 @@ private fun MenuCaption(text: String) {
 @Composable
 private fun MenuAction(label: String, icon: ImageVector, onClick: () -> Unit) {
     DropdownMenuItem(
-        text = { Text(label) },
+        text = {
+            Text(
+                label,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        },
         leadingIcon = { Icon(icon, null, modifier = Modifier.size(18.dp)) },
         onClick = onClick,
     )

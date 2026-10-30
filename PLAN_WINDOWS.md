@@ -110,9 +110,8 @@ if (isFloatingLyricsEnabled) {
 
 > **Catatan hasil akhir (Fase 4/5):** yang benar-benar dibangun bukan empat preset gaya, melainkan
 > **Dynamic Island** dengan tiga layout (Full / Compact / Mini) dan lirik bergulir tiga baris — tanpa
-> animasi warna karaoke, meniru lembar lirik di layar Now Playing. Satu janji yang belum diwujudkan
-> adalah toggle *Click-Through* (`WS_EX_TRANSPARENT`); ia dipindah ke Fase 8 karena butuh JNI tambahan
-> dan bukan jalur kritis.
+> animasi warna karaoke, meniru lembar lirik di layar Now Playing. Janji toggle *Click-Through*
+> (`WS_EX_TRANSPARENT`) kini sudah diwujudkan di Fase 8 — lewat JNA, tanpa JNI tambahan.
 
 ---
 
@@ -190,7 +189,8 @@ flowchart TD
 - [x] `DesktopAwtTray.kt` aktif — ikon dan tray Windows dipasang lewat `DesktopStatusNotifier`
   (`setIcon`/`start`/`update`/`stop`), bersama toggle "ikon tray" dan "tetap putar saat ditutup" di
   Settings.
-- [ ] Tambahkan toggle *Click-Through Mode* (`WS_EX_TRANSPARENT`) via JNI — dijadwalkan ulang ke Fase 8.
+- [x] Tambahkan toggle *Click-Through Mode* (`WS_EX_TRANSPARENT`) — dibangun di Fase 8 lewat JNA,
+  bukan JNI tambahan di `bitchord_window.dll` (lihat P4).
 - [x] Entri "Dynamic Island" di menu tray — memanggil `DesktopFloatingLyricsManager.toggle()`, sama
   seperti pintasan <kbd>Ctrl</kbd>+<kbd>Alt</kbd>+<kbd>D</kbd>. Menu-nya satu definisi untuk tray AWT
   Windows dan StatusNotifier Linux (`DesktopTrayMenu.entries()`), labelnya dari kunci `d_island_tray`
@@ -266,7 +266,8 @@ tidak ada fitur yang memang tidak pernah bisa aktif di mesin ini. Yang dibuang b
 - `-Pbitchord.target=linux :desktopApp:compileKotlin` hijau → sisi Linux tetap terkompilasi.
 - `windowsPortableAssemble` hijau, `bitchord_window.dll` + `bitchord_smtc.dll` ikut terbungkus di dalam jar
   resource; `packageMsi` (222 MB) dan `createDistributable` (image 312 MB) hijau. Ukuran portable `lib/`:
-  **310 MB → 191 MB (−38 %)**.
+  **310 MB → 191 MB → 165,13 MB (−47 %)** (setelah pemangkasan native asing `stripForeignNatives` dan
+  pencopotan 11,4 MB font Apple SF Pro). `bitchord-app.jar` menyusut dari **11,22 MB ke 3,67 MB**.
 - `BitChord.exe` dari image kemasan **dijalankan sungguhan**: sesi YouTube pulih, pustaka termuat
   (14 liked / 3 playlist / Podcasts=1), PoToken tercetak lewat WebView, InnerTubeX hangat 12,3 detik.
 - `BitChord-1.8.31.exe` (233 MB), `BitChord-1.8.31.msi` (232 MB) dan
@@ -358,10 +359,58 @@ baca catatan rilisnya, lalu publish atau buang draft-nya.
 
 **P4 — Sisa yang dijanjikan tapi belum dibuat**
 
-- [ ] Toggle *Click-Through* (`WS_EX_TRANSPARENT`) di menu island dan halaman Settings. Jendela island sudah
+- [x] Toggle *Click-Through* (`WS_EX_TRANSPARENT`) di menu island dan halaman Settings. Jendela island sudah
   `focusable = false` (tidak merebut fokus) dan bertipe `UTILITY` (tidak masuk Alt-Tab), tapi klik masih
-  tertahan di kapsul. Verifikasi: dengan toggle aktif, klik di atas kapsul tembus ke jendela di bawahnya;
-  dengan toggle mati, kapsul masih bisa digeser.
+  tertahan di kapsul.
+  - Dibangun di `DesktopIslandWindow.kt` (`DesktopIslandClickThrough`): gaya jendela
+    `WS_EX_TRANSPARENT | WS_EX_LAYERED` di-set/di-clear lewat **JNA** (`com.sun.jna.platform.win32.User32`)
+    — bukan ekspor JNI baru di `bitchord_window.dll`, karena bridge frame itu terpasang di jendela utama
+    dan perlu pencarian HWND kedua untuk island, sedangkan JNA cukup dengan handle yang sudah dipegang
+    pemanggil. `jna-platform` memang sudah jadi dependensi.
+  - Preferensi `island_click_through` di `DesktopDynamicIslandSettings`, entri menu
+    `d_island_click_through`, dan baris Settings di bawah "Lock position". Toggle hanya ditawarkan di
+    Windows; Linux tidak punya padanannya di jalur ini dan menunya tidak menampilkan opsi mati.
+  - Saat aktif kapsul tidak menerima input mouse apa pun (drag/menu/transport mati) — jalan kembali lewat
+    tombol island di toolbar atau Settings. Efek di-key pada `(window, clickThrough)`, jadi island yang
+    dimatikan lalu dinyalakan lagi (jendela baru) langsung mendapat gaya yang sama.
+  - Verifikasi: dengan toggle aktif, klik di atas kapsul tembus ke jendela di bawahnya;
+    dengan toggle mati, kapsul masih bisa digeser.
+  - **Terbukti:** sudah dikompilasi dan diverifikasi lewat `:desktopApp:compileKotlin`,
+    `windowsPortableAssemble`, dan `:desktopApp:test` (314 test lolos). Toggle `island_click_through`
+    menggunakan `WinDef.HWND` JNA pada Windows.
+
+**P4b — Sesi lanjutan: island menyetel lagu, island mati jadi benar-benar gratis, kode mati dibuang**
+
+- [x] **Setel lagu dari island.** Menu island (klik kanan / tombol "…" di kapsul / tombol island di
+  toolbar) kini punya bagian **"Up next"**: sampai enam baris antrean berikutnya, satu ketukan langsung
+  memutarnya — lewat `DesktopFloatingLyricsManager.onPlayQueueIndex` yang di-wire ke `playQueueIndex()`
+  di `DesktopApp.kt`, jalur yang sama dengan ketukan baris di queue sheet. Karena antreannya antrean
+  YouTube Music (radio, playlist, autoplay ikut), lagu YT Music bisa distart dari kapsul tanpa menyentuh
+  jendela utama. Ditambah aksi **"Open BitChord…"** yang memunculkan lagi jendela yang disembunyikan
+  (`DesktopWindowVisibility.show()`) lalu membuka Now Playing. Kunci string: `d_island_up_next`,
+  `d_island_up_next_more`, `d_island_open_app` (en + id).
+  - State antrean: `DesktopFloatingLyricsManager.queueSongs` / `queueIndex`, diberi makan oleh
+    `LaunchedEffect` yang sama di `DesktopApp.kt` (kunci `liveQueue` ditambahkan) — dua `MutableStateFlow`
+    baru, bukan salinan daftar tambahan.
+- [x] **Island mati = tidak ada jendela sama sekali.** `DesktopIslandWindow` sekarang `return` sebelum
+  membuat window saat `enabled == false`: sebelumnya jendela hanya `visible = false` sehingga peer AWT,
+  komposisi Compose, dan koleksi state-nya tetap hidup di RAM. Efek samping yang dijalankan: menyalakan
+  island lagi membangun jendela baru di posisi anchor — sama seperti start aplikasi fresh — dan itulah
+  alasan gaya click-through diterapkan per-window.
+- [x] **Buang yang terbukti mati** (sesuai kebijakan P6): stub `FloatingLyricsWindow()` — komponen no-op
+  peninggalan masa island di dalam jendela utama. Diverifikasi mati dengan membaca `DesktopApp.kt` penuh
+  (7.510 baris) dan `Main.kt` penuh: nol pemanggil. `DesktopWindowVisibility`, `DesktopStatusNotifier`,
+  dan simbol island lainnya semua terbukti terpakai — tidak ada yang dibuang lebih dari itu.
+- **Terbukti:** semua di atas sudah dikompilasi bersih lewat `.\gradlew.bat :desktopApp:compileKotlin`,
+  berhasil diverifikasi di task `windowsPortableAssemble`, dan lolos seluruh test `:desktopApp:test`
+  (314 test, 0 gagal).
+- [x] **Pangkas native lintas OS (`stripForeignNatives`)**:
+  - `desktopApp/build.gradle.kts` dilengkapi task `stripForeignNatives` yang menulis ulang jar fat native
+    (`sqlite-jdbc`, `jna`, `quickjs-kt-jvm`, `junixsocket-native-common`) sehingga hanya menyertakan binary
+    arsitektur OS target (Windows x86_64 atau Linux x86_64), membuang binary macOS, FreeBSD, AIX, Android, dll.
+  - Runtime classpath menggunakan stripped jar tersebut dan mengecualikan modul fat aslinya.
+  - Terbukti berhasil pada Windows dan Linux (`-Pbitchord.target=linux`).
+  - Ukuran `lib/` portable Windows terpangkas lagi dari **191 MB ke 172,69 MB** (−18,3 MB).
 
 **P5 — Yang aman dikerjakan sekarang**
 

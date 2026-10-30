@@ -69,7 +69,10 @@
 - **Dynamic Island lyrics** — a 660×104 capsule on its own frameless, transparent, always-on-top
   window: three rolling lyric lines, cover art and transport controls, out of the taskbar and Alt-Tab,
   and it never steals focus from what you are typing into. Three layouts (Full / Compact / Mini), six
-  anchors, size and opacity sliders, drag-to-position, and a toggle in the system tray. The main window
+  anchors, size and opacity sliders, drag-to-position, an optional click-through mode (on Windows,
+  `WS_EX_TRANSPARENT` via JNA, so clicks fall through the capsule to whatever is beneath it), a menu
+  whose "Up next" section starts any song in the YouTube Music queue without opening the app, and a
+  toggle in the system tray. The main window
   is separate: on Windows it draws its own Fluent caption with a DWM backdrop, on Linux the window
   manager decorates it.
 

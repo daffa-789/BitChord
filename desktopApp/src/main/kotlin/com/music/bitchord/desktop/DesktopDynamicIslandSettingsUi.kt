@@ -50,6 +50,7 @@ internal fun DynamicIslandSettingsGroup() {
     val autoCollapse by DesktopDynamicIslandSettings.autoCollapse.collectAsState()
     val hideWhenPaused by DesktopDynamicIslandSettings.hideWhenPaused.collectAsState()
     val locked by DesktopDynamicIslandSettings.locked.collectAsState()
+    val clickThrough by DesktopDynamicIslandSettings.clickThrough.collectAsState()
 
     SettingsToggle(
         title = DesktopStrings["d_island_floating", "Floating island"],
@@ -179,6 +180,17 @@ internal fun DynamicIslandSettingsGroup() {
             checked = locked,
             onCheckedChange = DesktopDynamicIslandSettings::setLocked,
         )
+        if (DesktopPlatform.isWindows) {
+            SettingsToggle(
+                title = DesktopStrings["d_island_click_through", "Click-through"],
+                subtitle = DesktopStrings[
+                    "d_island_click_through_subtitle",
+                    "Clicks over the capsule go to the window underneath. Switch it off here to grab the capsule again.",
+                ],
+                checked = clickThrough,
+                onCheckedChange = DesktopDynamicIslandSettings::setClickThrough,
+            )
+        }
         SettingsNavigationRow(
             title = DesktopStrings["d_island_reset_position_title", "Reset island position"],
             subtitle = DesktopStrings["d_island_reset_position_subtitle", "Puts the capsule back at its chosen corner"],

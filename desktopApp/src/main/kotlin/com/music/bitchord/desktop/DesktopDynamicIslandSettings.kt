@@ -114,6 +114,16 @@ internal object DesktopDynamicIslandSettings {
     /** Pins the capsule where it is, so a stray drag cannot move it. */
     val locked: MutableStateFlow<Boolean> = MutableStateFlow(persistence.boolean(KEY_LOCKED, false))
 
+    /**
+     * Lets mouse clicks fall through the floating capsule to the window underneath it.
+     *
+     * With it on, the capsule is a readout only — no drag, no menu, no transport — and it is
+     * switched back from Settings or the toolbar's island button, both of which live in windows
+     * the capsule does not cover.
+     */
+    val clickThrough: MutableStateFlow<Boolean> =
+        MutableStateFlow(persistence.boolean(KEY_CLICK_THROUGH, false))
+
     /** How opaque the capsule's glass is: 0.35 lets the page through, 1 is solid. */
     val opacity: MutableStateFlow<Float> = MutableStateFlow(persistence.float(KEY_OPACITY, 0.94f))
 
@@ -176,6 +186,8 @@ internal object DesktopDynamicIslandSettings {
         locked.value = value
     }
 
+    fun setClickThrough(value: Boolean) = writeBoolean(KEY_CLICK_THROUGH, value, clickThrough)
+
     fun setOpacity(value: Float) {
         val clamped = value.coerceIn(MIN_OPACITY, 1f)
         persistence.saveFloat(KEY_OPACITY, clamped)
@@ -219,6 +231,7 @@ internal object DesktopDynamicIslandSettings {
     private const val KEY_AUTO_COLLAPSE = "island_auto_collapse"
     private const val KEY_HIDE_WHEN_PAUSED = "island_hide_when_paused"
     private const val KEY_LOCKED = "island_locked"
+    private const val KEY_CLICK_THROUGH = "island_click_through"
     private const val KEY_OPACITY = "island_opacity"
     private const val KEY_SCALE = "island_scale"
     private const val KEY_OFFSET_X = "island_offset_x"

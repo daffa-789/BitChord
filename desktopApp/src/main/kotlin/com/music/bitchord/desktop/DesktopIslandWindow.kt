@@ -35,10 +35,63 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
+import com.sun.jna.Native
+import com.sun.jna.platform.win32.User32
+import com.sun.jna.platform.win32.WinDef.HWND
+import com.sun.jna.platform.win32.WinUser
 import java.awt.Dimension
 import java.awt.GraphicsEnvironment
 import java.awt.Toolkit
+import java.awt.Window as AwtWindow
 import kotlin.math.roundToInt
+import kotlinx.coroutines.delay
+
+/**
+ * Windows' click-through for the capsule's window.
+ *
+ * `WS_EX_TRANSPARENT` (with `WS_EX_LAYERED`, its usual companion on a transparent window) is what
+ * makes the system's hit test skip a window entirely, so a click lands on whatever is underneath.
+ * With the flag on, the capsule receives no mouse input at all — no drag, no menu, no transport —
+ * which is exactly what the toggle promises, and the way back is the toolbar's island button or
+ * Settings, neither of which lives under the capsule.
+ *
+ * JNA's own User32 mapping is used rather than a new export in `bitchord_window.dll`: the frame
+ * bridge installs on the main window and would need a second lookup for the island, while this is
+ * one window whose handle the caller already holds. Linux has no equivalent here — its window
+ * manager owns input shape, and the toggle is simply not offered there.
+ */
+internal object DesktopIslandClickThrough {
+
+    suspend fun apply(window: AwtWindow, enabled: Boolean) {
+        if (!DesktopPlatform.isWindows) return
+        repeat(APPLY_ATTEMPTS) { attempt ->
+            val done = runCatching {
+                val handle = Native.getComponentPointer(window) ?: return@runCatching false
+                val user32 = User32.INSTANCE
+                val hwnd = HWND(handle)
+                val style = user32.GetWindowLong(hwnd, WinUser.GWL_EXSTYLE)
+                val wanted = if (enabled) {
+                    style or WinUser.WS_EX_TRANSPARENT or WinUser.WS_EX_LAYERED
+                } else {
+                    style and WinUser.WS_EX_TRANSPARENT.inv()
+                }
+                if (wanted != style) user32.SetWindowLong(hwnd, WinUser.GWL_EXSTYLE, wanted)
+                true
+            }.getOrElse {
+                DesktopTrackLog.log("island click-through failed: ${it.message}")
+                true
+            }
+            if (done) return
+            // The AWT peer does not exist the instant the composable enters composition; give it
+            // a moment rather than dropping the toggle the user just switched.
+            delay(APPLY_RETRY_MILLIS)
+        }
+        DesktopTrackLog.log("island click-through: no native handle for the capsule's window")
+    }
+
+    private const val APPLY_ATTEMPTS = 20
+    private const val APPLY_RETRY_MILLIS = 100L
+}
 
 /**
  * The floating capsule, as a window of its own.
@@ -52,10 +105,17 @@ import kotlin.math.roundToInt
  * It is deliberately not focusable and never takes the taskbar: it is a readout you glance at, not
  * a window you work in. Everything it shows comes from [DesktopFloatingLyricsManager], which the
  * main window keeps fed whether or not it is on screen.
+ *
+ * When the island is switched off, nothing is composed at all — the window is not merely hidden
+ * but absent, so an off island costs no AWT peer, no Compose composition and no state collection.
+ * Turning it back on builds a fresh window, which is also why the click-through style is applied
+ * per-window rather than once.
  */
 @Composable
 internal fun DesktopIslandWindow() {
     val enabled by DesktopDynamicIslandSettings.enabled.collectAsState()
+    // An off island is no island: no window, no composition, nothing to weigh the process down.
+    if (!enabled) return
     val layoutSetting by DesktopDynamicIslandSettings.layout.collectAsState()
     val anchor by DesktopDynamicIslandSettings.anchor.collectAsState()
     val scale by DesktopDynamicIslandSettings.scale.collectAsState()
@@ -63,6 +123,7 @@ internal fun DesktopIslandWindow() {
     val autoCollapse by DesktopDynamicIslandSettings.autoCollapse.collectAsState()
     val hideWhenPaused by DesktopDynamicIslandSettings.hideWhenPaused.collectAsState()
     val locked by DesktopDynamicIslandSettings.locked.collectAsState()
+    val clickThrough by DesktopDynamicIslandSettings.clickThrough.collectAsState()
 
     val song by DesktopFloatingLyricsManager.currentSong.collectAsState()
     val isPlaying by DesktopFloatingLyricsManager.isPlaying.collectAsState()
@@ -125,6 +186,12 @@ internal fun DesktopIslandWindow() {
             // A transparent AWT window still paints its own shadow and border on some Windows
             // builds, which shows as a grey rectangle around the capsule.
             runCatching { window.minimumSize = Dimension(1, 1) }
+        }
+
+        // Keyed on the window too: an island switched off and back on gets a fresh window, whose
+        // style has to be set again if click-through is still asked for.
+        LaunchedEffect(window, clickThrough) {
+            DesktopIslandClickThrough.apply(window, clickThrough)
         }
 
         val dragModifier = if (locked) {

@@ -8,7 +8,17 @@
  * and the resource class are unchanged from :sharedUi, so the desktop's imports
  * did not move; that is safe only because no module depends on both.
  */
-val cmp = "1.10.3"
+/** Versions shared with the desktop modules; see the block in gradle.properties. */
+fun property(name: String): String = providers.gradleProperty("bitchord.lib.$name").get()
+
+/**
+ * Which platform this build is *for*, which is the host unless `-Pbitchord.target` says otherwise.
+ * The same rule desktopApp/build.gradle.kts uses, so a cross build cannot compile this module
+ * against the other platform's pairing.
+ */
+val targetOs: String = (providers.gradleProperty("bitchord.target").orNull
+    ?: if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "windows" else "linux")
+    .lowercase()
 
 /**
  * What the desktop graph resolves, and what this module is compiled against.
@@ -20,12 +30,13 @@ val cmp = "1.10.3"
  * lyric line grew. Compiling against the version the desktop actually resolves
  * keeps the compile-time link and the runtime link the same.
  */
-val CMP_DESKTOP =
-    // Haze 1.7.x, which the Windows build uses (see desktopApp/build.gradle.kts), was compiled
-    // against a ShaderBrush.createShader that returns skia's Shader; 1.12 changed that return
-    // type, so on 1.12 every blur dies with NoSuchMethodError. Windows stays on the plugin's
-    // own 1.10.3 / skiko 0.9; only Linux moves to 1.12.
-    if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "1.10.3" else "1.12.0"
+val cmp = if (targetOs == "windows") property("compose.windows") else property("compose.linux")
+
+// Haze 1.7.x, which the Windows build uses (see desktopApp/build.gradle.kts), was compiled
+// against a ShaderBrush.createShader that returns skia's Shader; 1.12 changed that return
+// type, so on 1.12 every blur dies with NoSuchMethodError. Windows stays on the plugin's
+// own 1.10.3 / skiko 0.9; only Linux moves to 1.12.
+val haze = if (targetOs == "windows") property("haze.windows") else property("haze.linux")
 
 plugins {
     id("org.jetbrains.kotlin.multiplatform")
@@ -61,19 +72,23 @@ kotlin {
             api("org.jetbrains.compose.foundation:foundation:$cmp")
             api("org.jetbrains.compose.animation:animation:$cmp")
             api("org.jetbrains.compose.ui:ui:$cmp")
-            api("org.jetbrains.compose.material3:material3:1.7.3")
-            api("org.jetbrains.compose.material:material-icons-extended:1.7.3")
+            // Both of these were pinned a full generation behind what the desktop packages actually
+            // carry (material3 1.7.3 against a resolved 1.9.0, haze 1.3.1 against 1.7.x), which is
+            // the drift `cmp` above exists to prevent. These are the shipped versions.
+            api("org.jetbrains.compose.material3:material3:${property("material3")}")
+            api("org.jetbrains.compose.material:material-icons-extended:${property("materialIcons")}")
             api("org.jetbrains.compose.components:components-resources:$cmp")
-            api("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.8.4")
-            api("io.coil-kt.coil3:coil-compose:3.0.4")
-            api("dev.chrisbanes.haze:haze:1.3.1")
-            api("dev.chrisbanes.haze:haze-materials:1.3.1")
-            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:1.9.0")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:1.7.3")
+            // 2.9.6, not the 2.8.4 this used to name: same reason as material3.
+            api("org.jetbrains.androidx.lifecycle:lifecycle-runtime-compose:2.9.6")
+            api("io.coil-kt.coil3:coil-compose:${property("coil")}")
+            api("dev.chrisbanes.haze:haze:$haze")
+            api("dev.chrisbanes.haze:haze-materials:$haze")
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${property("coroutines")}")
+            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:${property("serialization")}")
         }
-        // See CMP_DESKTOP above.
+        // See `cmp` above.
         jvmMain.dependencies {
-            api("org.jetbrains.compose.ui:ui-desktop:$CMP_DESKTOP")
+            api("org.jetbrains.compose.ui:ui-desktop:$cmp")
         }
         jvmTest.dependencies {
             implementation(kotlin("test"))

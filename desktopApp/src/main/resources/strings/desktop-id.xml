@@ -63,6 +63,11 @@
     <string name="d_island_bottom_center">Bawah tengah</string>
     <string name="d_island_bottom_left">Bawah kiri</string>
     <string name="d_island_bottom_right">Bawah kanan</string>
+    <string name="d_island_click_through">Klik tembus</string>
+    <string name="d_island_click_through_subtitle">Klik di atas kapsul diteruskan ke jendela di bawahnya. Matikan di sini untuk bisa menggeser kapsul lagi.</string>
+    <string name="d_island_up_next">Berikutnya</string>
+    <string name="d_island_up_next_more">…dan masih ada lagi di antrean</string>
+    <string name="d_island_open_app">Buka BitChord…</string>
     <string name="d_island_collapse">Kecilkan saat menganggur</string>
     <string name="d_island_collapse_subtitle">Menyusut jadi pil Mini saat kursor menjauh, lalu membesar lagi saat kursor kembali</string>
     <string name="d_island_controls">Kontrol pemutar</string>
