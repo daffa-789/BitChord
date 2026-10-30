@@ -51,3 +51,6 @@ AGENTS.md
 
 # Claude Code session files (launch configs, worktrees)
 .claude/
+
+# Teamwork agents
+.agents/

@@ -16,9 +16,13 @@ fun property(name: String): String = providers.gradleProperty("bitchord.lib.$nam
  * The same rule desktopApp/build.gradle.kts uses, so a cross build cannot compile this module
  * against the other platform's pairing.
  */
-val targetOs: String = (providers.gradleProperty("bitchord.target").orNull
-    ?: if (System.getProperty("os.name").contains("Windows", ignoreCase = true)) "windows" else "linux")
-    .lowercase()
+val hostIsWindows = System.getProperty("os.name").contains("Windows", ignoreCase = true)
+val hostIsMac = System.getProperty("os.name").contains("Mac", ignoreCase = true)
+val targetOs: String = (providers.gradleProperty("bitchord.target").orNull ?: when {
+    hostIsWindows -> "windows"
+    hostIsMac -> "macos"
+    else -> "linux"
+}).lowercase()
 
 /**
  * What the desktop graph resolves, and what this module is compiled against.
@@ -30,13 +34,21 @@ val targetOs: String = (providers.gradleProperty("bitchord.target").orNull
  * lyric line grew. Compiling against the version the desktop actually resolves
  * keeps the compile-time link and the runtime link the same.
  */
-val cmp = if (targetOs == "windows") property("compose.windows") else property("compose.linux")
+val cmp = when (targetOs) {
+    "windows" -> property("compose.windows")
+    "macos" -> property("compose.macos")
+    else -> property("compose.linux")
+}
 
 // Haze 1.7.x, which the Windows build uses (see desktopApp/build.gradle.kts), was compiled
 // against a ShaderBrush.createShader that returns skia's Shader; 1.12 changed that return
 // type, so on 1.12 every blur dies with NoSuchMethodError. Windows stays on the plugin's
 // own 1.10.3 / skiko 0.9; only Linux moves to 1.12.
-val haze = if (targetOs == "windows") property("haze.windows") else property("haze.linux")
+val haze = when (targetOs) {
+    "windows" -> property("haze.windows")
+    "macos" -> property("haze.macos")
+    else -> property("haze.linux")
+}
 
 plugins {
     id("org.jetbrains.kotlin.multiplatform")

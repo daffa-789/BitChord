@@ -249,9 +249,58 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  macos:
+    name: macOS arm64 DMG
+    needs: meta
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Package .dmg
+        run: >
+          ./gradlew :desktopApp:packageDmg
+          -Pbitchord.version=${{ needs.meta.outputs.version }}
+          -Pbitchord.build=${{ needs.meta.outputs.build }}
+
+      - name: Stage the artefacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cp desktopApp/build/compose/binaries/main/dmg/*.dmg dist/
+          ls -l dist
+
+      - name: Hash what ships
+        run: |
+          set -euo pipefail
+          cd dist
+          for file in *.dmg; do
+            [ -f "$file" ] || continue
+            printf '%s  %s\n' "$(shasum -a 256 -- "$file" | cut -d' ' -f1)" "$file"
+          done > SHA256SUMS.macos.txt
+          cat SHA256SUMS.macos.txt
+
+      - name: Upload macOS artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-macos
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
   release:
     name: Publish
-    needs: [meta, windows, linux]
+    needs: [meta, windows, linux, macos]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -267,8 +316,8 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          sort -u SHA256SUMS.windows.txt SHA256SUMS.linux.txt > SHA256SUMS.txt
-          rm SHA256SUMS.windows.txt SHA256SUMS.linux.txt
+          sort -u SHA256SUMS.windows.txt SHA256SUMS.linux.txt SHA256SUMS.macos.txt > SHA256SUMS.txt
+          rm SHA256SUMS.windows.txt SHA256SUMS.linux.txt SHA256SUMS.macos.txt
           sha256sum --check SHA256SUMS.txt
           ls -l
 
@@ -282,7 +331,7 @@ jobs:
           set -euo pipefail
           cd dist
           {
-            echo "BitChord ${VERSION} for desktop: Windows and Linux. Built by this workflow run from \`${COMMIT:0:10}\`."
+            echo "BitChord ${VERSION} for desktop: Windows, Linux, and macOS (Apple Silicon). Built by this workflow run from \`${COMMIT:0:10}\`."
             echo
             if [ "$PRERELEASE" = "true" ]; then
               echo "> [!NOTE]"
@@ -300,6 +349,7 @@ jobs:
             echo
             echo '## Which one to take'
             echo
+            echo '- **macOS** — `BitChord-*.dmg` for Apple Silicon (macOS 12+ / arm64).'
             echo '- **Windows** — `BitChord-*.msi` for a per-user installer (no admin needed);'
             echo '  `BitChord-*.exe` is the same installer as a single file; `*-windows-portable.zip`'
             echo '  installs nothing but expects a Java 21+ runtime on `PATH` or in `JAVA_HOME`.'
@@ -310,7 +360,8 @@ jobs:
             echo 'Put `SHA256SUMS.txt` in the folder holding the files you downloaded, then:'
             echo
             echo '```bash'
-            echo 'sha256sum -c SHA256SUMS.txt        # Linux, macOS, Git Bash'
+            echo 'shasum -a 256 -c SHA256SUMS.txt        # macOS'
+            echo 'sha256sum -c SHA256SUMS.txt              # Linux, Git Bash'
             echo '```'
             echo
             echo '```powershell'
