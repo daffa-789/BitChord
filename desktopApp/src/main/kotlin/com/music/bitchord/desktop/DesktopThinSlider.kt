@@ -41,6 +41,14 @@ internal fun DesktopThinSlider(
     value: Float,
     onValueChange: (Float) -> Unit,
     modifier: Modifier = Modifier,
+    /**
+     * Fires the moment a press lands on the bar, before the first value arrives.
+     *
+     * The island uses it to stop dragging its own window while a scrub is in progress: both
+     * gestures sit on the same pointer, and without this the capsule would slide across the
+     * screen while the playhead was being moved.
+     */
+    onValueChangeStarted: (() -> Unit)? = null,
     onValueChangeFinished: (() -> Unit)? = null,
     /** Sends a sheen travelling along the bar for as long as it is true. */
     mixing: Boolean = false,
@@ -75,6 +83,7 @@ internal fun DesktopThinSlider(
                 awaitEachGesture {
                     val down = awaitFirstDown(requireUnconsumed = false)
                     dragging = true
+                    onValueChangeStarted?.invoke()
                     onValueChange((down.position.x / size.width).coerceIn(0f, 1f))
 
                     while (true) {

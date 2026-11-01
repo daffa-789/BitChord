@@ -26,6 +26,25 @@ fun rememberDesktopArtworkPalette(url: String?): DesktopArtworkPalette {
     return palette
 }
 
+/**
+ * As [rememberDesktopArtworkPalette], but null until the artwork has actually been read.
+ *
+ * A surface that tints itself with the palette would otherwise wear the fallback red for as long
+ * as the image takes to arrive — at every song change, on a network. Null lets it stay plain until
+ * there is a colour to wear.
+ */
+@Composable
+fun rememberDesktopArtworkPaletteOrNull(url: String?): DesktopArtworkPalette? {
+    val palette by produceState<DesktopArtworkPalette?>(null, key1 = url) {
+        value = null
+        value = withContext(Dispatchers.IO) {
+            // No artwork, no colour: the fallback here would be a guess, not the cover's own.
+            DesktopArtworkCache.load(url)?.let { DesktopArtworkPalette.from(it) }
+        }
+    }
+    return palette
+}
+
 private fun DesktopArtworkPalette.Companion.from(bitmap: ImageBitmap?): DesktopArtworkPalette {
     if (bitmap == null || bitmap.width == 0 || bitmap.height == 0) return DesktopArtworkPalette.Default
     val pixels = IntArray(bitmap.width * bitmap.height)

@@ -126,6 +126,7 @@ flowchart TD
     Fase5 --> Fase6["Fase 6: Tray, Terjemahan & Kemasan"]
     Fase6 --> Fase7["Fase 7: Optimasi & Pemangkasan (Windows + Linux saja)"]
     Fase7 --> Fase8["Fase 8: Rilis, CI & Ukur (rencana berikut)"]
+    Fase8 --> Fase9["Fase 9: Rombak YT Music × Dynamic Island (selesai)"]
 ```
 
 ### Rincian Checklist:
@@ -149,7 +150,7 @@ flowchart TD
 
 #### Fase 4: Dynamic Island Lyrics & YouTube Music Session Persistence (Selesai!)
 - [x] **Dynamic Island Lyrics Window (Format 3 Baris Lirik + Media Control)**:
-  - Format Kapsul Mengambang Dynamic Island (`660.dp x 104.dp`) dengan deep OLED glass background & border glowing halus.
+  - Format Kapsul Mengambang Dynamic Island (`660.dp x 104.dp`) dengan deep OLED glass background & border glowing halus. (Ukuran berubah lagi di Fase 9: 680×116 dengan baris seek.)
   - **Kiri**: Artwork Cover, Judul Lagu, Artis, dan Kontrol Pemutar Musik (`⏮ Prev`, `▶/⏸ Play/Pause/Stop`, `⏭ Next/Lanjut`, `🔁 Repeat Mode`).
   - **Kanan (3 Baris Lirik Rolling)**:
     - Baris 1: `(Lirik Lagu Sebelum)` — teks redup 38%
@@ -428,4 +429,109 @@ baca catatan rilisnya, lalu publish atau buang draft-nya.
 - [ ] Sebelum membuang fitur lagi: cek dulu ia muncul di UI atau tidak. Kebijakan repo ini **buang yang
   terbukti mati saja** — fitur yang terlihat di layar dipertahankan kecuali ada bukti ia tidak pernah bisa
   aktif (contoh yang ditahan: JioSaavn; contoh yang dibuang: Listen Together).
+
+---
+
+**Fase 9 — Rombak "YouTube Music × Dynamic Island" (selesai, 31 Oktober 2026)**
+
+Arah yang dipilih lewat pertanyaan desain: **"YT Music + identitas BitChord"** — dasar gelap hangat
+("Night Stage"), aksen coral hanya untuk status live, kaca yang mewarisi warna artwork, dan Dynamic
+Island sebagai pemain utama. Cakupannya menyeluruh (shell, Home/Explore/Library/Search, Now Playing,
+dan island); Settings hanya dirapikan memakai token yang sama. Pembersihan dibatasi pada **kode/config
+yang terbukti mati** — katalog string, `packaging/appimage.sh`, jalur Linux, dan target macOS tidak
+disentuh.
+
+- [x] **Fase 0 — buang yang terbukti mati.**
+  - Mesin transisi SMART: `shared/.../smart/TransitionPolicy.kt` (493 baris) dan `TrackAnalysis.kt`
+    (166 baris); jalur SMART di `TransitionPlanner.kt` ikut dipangkas. `CrossfadeMode.SMART` tidak
+    pernah dibuat dan satu-satunya pemanggil `planTransition` selalu mengirim `STANDARD`/`advanced =
+    false`; jalur crossfade manual tetap utuh.
+  - `SongInfoRepository.kt` + `SongInfoParserTest.kt`, `my/kizzy/utils/Ext.kt` (`toRpcImage`),
+    `SyncedLyricsPanel.kt`, `PillTextField`/`BAR_GUTTER`/`FLOATING_BAR_MAX_WIDTH`,
+    `ReplayCardRowSkeleton`, `artworkMeshColors`, dan `DesktopGlassStrong`.
+  - Dependency yatim `kotlinx-serialization-json` (desktopUi), blok ProGuard yang `isEnabled = false`
+    beserta `packaging/proguard-rules.pro`, script scratch `.w1.mjs`/`.w5.mjs`/`tools/icon-audit.sh`,
+    dan `ensureVisitorData`/`capture` di `DesktopYouTubeSession.kt`.
+  - Verifikasi: tiga modul kompilasi bersih; `:desktopApp:test` tetap **314 test hijau**.
+
+- [x] **Fase 1 — design system "Night Stage"** (`desktopUi/.../ui/theme/BitChordTheme.kt`).
+  - Token `BcColors` (canvas `#0E0C10`, surface `#171419`, raised `#221E25`, coral live `#FF5A4E`,
+    hairline putih tipis), `BcShapes`, `BcSpacing`, `BcType` (system sans, tanpa file font), `BcMotion`
+    (hover 120 ms / standar 180 ms / sheet 280 ms), dan `LocalBcTint` untuk warna artwork.
+  - `DesktopApp.kt` memetakan warna lama ke token; `desktopColorScheme()` dan `desktopTypography()`
+    membaca token yang sama. `PAGE_GUTTER` 16 → 24 dan label ALL-CAPS diganti sentence case.
+
+- [x] **Fase 2 — shell dan dock pemain.**
+  - Sidebar 236 dp dengan wordmark, baris nav 36 dp dan garis live saat terpilih, caption "Your
+    playlists", serta petunjuk `Ctrl+K` (pintasannya membuka halaman Search dari mana saja).
+  - Top bar 64 → 56 dp; cluster transport, pill island di top bar, dan volume/audio-output dipindahkan
+    ke dock. Back, judul halaman, menu island, lyrics, queue, account, dan caption tetap.
+  - **`DesktopPlayerDock.kt`** — pemain di dalam jendela, muncul saat lagu dipilih, lebar maks 760 dp:
+    collapsed 64 dp (artwork, judul/artis, progress hairline, prev/play/next); hover membuka baris
+    seek/elapsed-remaining/volume plus shuffle/repeat/lyrics/queue/audio-output. Seek memakai
+    `DesktopThinSlider` dan hanya memanggil `onSeekFraction` sekali saat tombol dilepas; playhead
+    dibaca lewat lambda/`derivedStateOf` supaya tick 4 Hz tidak merekomposisi seluruh dock.
+  - Dock duduk di atas navigasi bawah pada jendela sempit (padding konten 208 dp vs 112 dp di lebar).
+  - Pembagian peran: dock mengontrol saat jendela utama fokus; island mengambil alih saat jendela
+    utama disembunyikan atau tidak fokus.
+
+- [x] **Fase 3 — halaman.**
+  - Home mendapat **Quick picks** dari shelf Recents (8 lagu, dua kolom di ≥560 dp) lewat slot aditif
+    `leadingContent`; shelf dan header dirapikan memakai token.
+  - Explore, Library, dan Search memakai chip/tile/gap baru; `Ctrl+K` membuka Search dari mana saja.
+  - Halaman host lagu/album/artist/collection ikut dirapikan; header album/artist memakai gradien
+    artwork yang memudar ke canvas. Settings hanya memakai token/spacing baru.
+  - Permukaan YouTube Music dibuat jelas: banner sign-in, label sumber "YouTube Music" di dock dan
+    Now Playing. Backend tidak diubah.
+
+- [x] **Fase 4 — Now Playing.**
+  - Backdrop tint artwork + vignette, sleeve radius 8 dengan hairline, judul kredit 24 sp, kontrol
+    transport dengan tombol play putih 56 dp; coral hanya untuk live/like dan indikator lirik.
+  - `LandscapePlayer` menjadi presentasi utama saat jendela melebar (`width > height` dan ≥560 dp):
+    artwork di kiri, info/lirik/queue di kanan, transport di bawah; portrait tetap untuk jendela
+    sempit. Semua perilaku lama (translasi lirik, provider picker, queue drag, Canvas, like,
+    repeat/shuffle, menu) dipertahankan.
+
+- [x] **Fase 5 — Dynamic Island sebagai pemain utama.**
+  - Ukuran MINI 360×44, COMPACT 540×64, **FULL 680×116** (dari 660×104): FULL mendapat baris seek
+    dengan waktu berjalan dan sisa waktu. Drag mempreview posisi lokal dan baru mengirim satu seek
+    saat dilepas.
+  - Glass kapsul diwarnai cover (alpha 0,22) lewat `rememberDesktopArtworkPaletteOrNull`, sehingga
+    tidak ada kedipan warna fallback sebelum artwork termuat. Klik kapsul membuka Now Playing.
+  - Kapsul hanya tampil saat ada lagu dan jendela utama tidak di depan; preview di Settings tetap
+    jalan.
+  - Posisi drag diingat: offset disimpan dalam dp relatif ke anchor, dipulihkan ke layar yang memuat
+    pusat kapsul, dan dijepit ke work area — monitor yang dicabut tidak meninggalkan kapsul di luar
+    layar. Lepas drag dalam ±48 dp dari tepi menarik kapsul menempel ke tepi.
+  - Saat seek berjalan, drag-window dimatikan (`onValueChangeStarted` → `seeking`), jadi menggeser
+    slider tidak memindahkan jendela; auto-collapse juga tidak mengecilkan kapsul di tengah drag.
+    Saat click-through aktif baris seek disembunyikan (kapsul murni readout).
+  - `DesktopFloatingLyricsManager.onSeek` di-wire di `DesktopApp.kt` ke `seekPlayer` yang sama dengan
+    dock; semua kontrol lama tetap, jadi mematikan island tidak mengunci pemutaran.
+  - README dan halaman ini diselaraskan dengan perilaku baru (ukuran, baris seek, tint, posisi yang
+    diingat, kapsul yang hanya muncul setelah ada lagu).
+
+- [x] **Temuan smoke test paket (bukan dari perubahan ini, tapi ikut diperbaiki).**
+  - Paket `createDistributable` melaporkan `Module with the Main dispatcher is missing` dari
+    `collectAsStateWithLifecycle`; kolektor lifecycle di UI ikut mati dan sesi YouTube Music gagal
+    dipulihkan. Runtime ternyata tidak membawa `kotlinx-coroutines-swing`. Ditambahkan
+    `implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:${property("coroutines")}")` di
+    `desktopUi/build.gradle.kts`; setelah itu sesi dipulihkan (`youtube: signed in`) dan
+    home/library/browse termuat di paket, tanpa exception.
+  - Sisa peringatan yang dibiarkan: `InnerTubeX warm-up failed:
+    com/sun/media/jfxmedia/events/PlayerStateListener` — jlink runtime tidak membawa modul media
+    JavaFX; browse/home/library tetap jalan lewat jalur Innertube lain.
+
+- **Terbukti di mesin ini:**
+  - `:shared:compileKotlinJvm :desktopUi:compileKotlinJvm :desktopApp:compileKotlin` hijau.
+  - `:desktopApp:test` 314 test hijau.
+  - `-Pbitchord.target=linux :desktopApp:compileKotlin` hijau.
+  - `:desktopApp:createDistributable` sukses; `app/BitChord/BitChord.exe` dijalankan: sesi YouTube
+    Music dipulihkan, home/library/browse termuat, proses stabil, lalu ditutup.
+
+- **Belum diverifikasi — jangan diklaim hijau:**
+  - Checklist visual pada 900×600 / 1220×780 / 1440×900 dan DPI 125%/150%.
+  - Drag + snap pada monitor kedua fisik, dan pemulihan posisi setelah monitor dicabut.
+  - Runtime Linux/macOS, paket MSI/DMG di mesin bersih, SMTC/MPRIS.
+  - `:shared:jvmTest` dan `:desktopUi:jvmTest` (offline-broken karena artefak tidak ada di cache).
 

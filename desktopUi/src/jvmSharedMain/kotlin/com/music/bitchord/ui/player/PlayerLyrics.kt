@@ -138,6 +138,7 @@ import com.music.bitchord.ui.haptics.Haptics
 import com.music.bitchord.ui.haptics.rememberHaptics
 import com.music.bitchord.ui.icons.BitChordIcons
 import com.music.bitchord.ui.rememberIsForeground
+import com.music.bitchord.ui.theme.BcColors
 import java.util.Locale
 import kotlin.math.PI
 import kotlin.math.abs
@@ -2081,12 +2082,8 @@ internal fun LyricsPanel(
                             .padding(horizontal = 11.dp, vertical = 4.dp),
                     ) {
                         Text(
-                            text = sectionTitle.uppercase(),
-                            style = MaterialTheme.typography.labelMedium.copy(
-                                letterSpacing = 1.3.sp,
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 11.5.sp,
-                            ),
+                            text = sectionTitle,
+                            style = MaterialTheme.typography.labelSmall,
                             color = Color.White.copy(alpha = 0.9f),
                         )
                     }
@@ -2886,6 +2883,18 @@ private fun CurrentLyricLine(
             .clickable(onClick = onClick)
             .padding(vertical = 4.dp),
     ) {
+        // The one coral mark in the words: a bar beside the line being sung,
+        // the same accent the liked heart takes. The full sheet lights the
+        // active line white instead — a lane down its side would cost every
+        // line the room this strip has to spare.
+        Box(
+            Modifier
+                .padding(end = 10.dp)
+                .width(3.dp)
+                .height(16.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(BcColors.Live),
+        )
         if (instrumental) {
             Icon(
                 imageVector = BitChordIcons.MusicNote,

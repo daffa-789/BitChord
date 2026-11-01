@@ -66,13 +66,17 @@
 - **Lyrics providers** — credit to [lrc.red](https://lrc.red), [BiniLyrics](https://github.com/binimum), [BetterLyrics](https://github.com/better-lyrics/better-lyrics), [PaxSenix](https://lyrics.paxsenix.org), [LyricsPlus](https://github.com/ibratabian17/YouLyPlus), [SimpMusic](https://github.com/maxrave-dev/SimpMusic), [Unison](https://unison.boidu.dev), [Megalobiz](https://www.megalobiz.com), [KuGou](https://www.kugou.com), [LRCLIB](https://lrclib.net), [Musixmatch](https://www.musixmatch.com) and [Genius](https://genius.com).
 - **Dynamic, artwork-driven theming** — Material palette extracted from album art.
 - **Frosted-glass UI** — Telegram-style translucent bars via Haze, Material 3 theming.
-- **Dynamic Island lyrics** — a 660×104 capsule on its own frameless, transparent, always-on-top
-  window: three rolling lyric lines, cover art and transport controls, out of the taskbar and Alt-Tab,
-  and it never steals focus from what you are typing into. Three layouts (Full / Compact / Mini), six
-  anchors, size and opacity sliders, drag-to-position, an optional click-through mode (on Windows,
+- **Dynamic Island player** — the player that stays with you: while BitChord is in front the in-app
+  dock carries playback, and the moment the main window is hidden or loses focus the capsule takes
+  over. A 680×116 capsule on its own frameless, transparent, always-on-top window with glass tinted by
+  the current cover: cover art, transport controls and three rolling lyric lines, and the Full layout
+  adds a scrub row with elapsed and remaining time. Click the capsule to open Now Playing. Out of the
+  taskbar and Alt-Tab, and it never steals focus from what you are typing into. Three layouts
+  (Full / Compact / Mini), six anchors, size and opacity sliders, drag-to-position that remembers
+  where you put it and snaps to screen edges, an optional click-through mode (on Windows,
   `WS_EX_TRANSPARENT` via JNA, so clicks fall through the capsule to whatever is beneath it), a menu
   whose "Up next" section starts any song in the YouTube Music queue without opening the app, and a
-  toggle in the system tray. The main window
+  toggle in the system tray. It only appears once a song is loaded. The main window
   is separate: on Windows it draws its own Fluent caption with a DWM backdrop, on Linux the window
   manager decorates it.
 
@@ -183,6 +187,9 @@ a light player rather than everything a phone client can do.
 
 - Windows Fluent caption and DWM backdrop (`bitchord_window.dll`), SMTC media keys (`bitchord_smtc.dll`), both built with CMake + Ninja + MinGW when present.
 - Dynamic Island lyrics overlay, its settings page, and a tray entry that toggles it on both platforms.
+- A YouTube Music-inspired shell around BitChord's own dark token set: a persistent player dock with
+  hover-expanded seek, volume and audio-output controls; restyled Home, Explore, Library and Search;
+  a landscape Now Playing; and the island as the out-of-window player.
 - One native loader (`DesktopNativeRuntime`) shared by the window frame and SMTC, and a portable zip
   task (`windowsPortable`) for machines where an installer is not wanted.
 - CI that compiles the Linux sources as well, so the MPRIS / StatusNotifier / ALSA side cannot drift

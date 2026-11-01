@@ -200,6 +200,12 @@ internal fun PlayerScrubber(
             loading = loading,
             mixing = mixing,
             transitionWindow = transitionWindow,
+            // A thin track with a knob on it, the way YouTube Music draws its
+            // seek bar. The touch target is unchanged: the knob is tall enough
+            // to make up for the bar's height.
+            idleHeight = 3.dp,
+            activeHeight = 5.dp,
+            thumbSize = 12.dp,
         )
         Box(
             modifier = Modifier
@@ -360,7 +366,7 @@ internal fun SleeveNerdStats(song: Song, modifier: Modifier = Modifier) {
  * Previous, play/pause, next.
  *
  * [compact] is the landscape player on a phone, where the portrait player's
- * 100dp play target is a third of the window's height on its own.
+ * 56dp play disc is a tenth of the window's height on its own.
  */
 @Composable
 internal fun TransportRow(
@@ -378,9 +384,9 @@ internal fun TransportRow(
     onNext: () -> Unit,
     compact: Boolean = false,
 ) {
-    val playSize = if (compact) 58.dp else 74.dp
-    val playTouch = if (compact) 76.dp else 92.dp
-    val skipSize = if (compact) 44.dp else PLAYER_SKIP_ICON_SIZE
+    val playSize = if (compact) 44.dp else 56.dp
+    val playTouch = if (compact) 56.dp else 68.dp
+    val skipSize = if (compact) 40.dp else PLAYER_SKIP_ICON_SIZE
     Row(
         modifier = Modifier.fillMaxWidth(),
         // SpaceAround, not SpaceEvenly: the outer margins take half a gap, so
@@ -405,18 +411,45 @@ internal fun TransportRow(
                 CircularProgressIndicator(
                     color = Color.White,
                     strokeWidth = 3.dp,
-                    modifier = Modifier.size(if (compact) 30.dp else 38.dp),
+                    modifier = Modifier.size(if (compact) 26.dp else 32.dp),
                 )
             }
         } else {
-            TransportGlyph(
-                icon = if (isPlaying) Res.drawable.ic_player_pause else Res.drawable.ic_player_play,
-                contentDescription = stringResource(if (isPlaying) Res.string.pause else Res.string.play),
-                size = playSize,
-                touchSize = playTouch,
-                onClick = onPlayPause,
-                haptic = if (isPlaying) Haptic.Pause else Haptic.Resume,
-            )
+            // A white disc rather than a white glyph: the one filled shape on
+            // the deck, which is what the eye reaches for first. Everything
+            // else in the transport stays a bare glyph on the backdrop.
+            val haptics = rememberHaptics()
+            Box(
+                modifier = Modifier
+                    .size(playTouch)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null,
+                    ) {
+                        haptics.play(if (isPlaying) Haptic.Pause else Haptic.Resume)
+                        onPlayPause()
+                    },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    modifier = Modifier
+                        .size(playSize)
+                        .clip(CircleShape)
+                        .background(Color.White),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(
+                        painter = painterResource(
+                            if (isPlaying) Res.drawable.ic_player_pause else Res.drawable.ic_player_play,
+                        ),
+                        contentDescription = stringResource(
+                            if (isPlaying) Res.string.pause else Res.string.play,
+                        ),
+                        tint = Color.Black,
+                        modifier = Modifier.size(playSize * 0.42f),
+                    )
+                }
+            }
         }
         TransportGlyph(
             icon = Res.drawable.ic_player_next,
@@ -682,12 +715,15 @@ internal fun CircleGlyph(
     onClick: () -> Unit,
     active: Boolean = false,
     haptic: Haptic = Haptic.Tap,
+    /** The glyph's colour once active: a liked heart is the one coral mark here. */
+    activeTint: Color? = null,
 ) {
     val haptics = rememberHaptics()
     val discAlpha by animateFloatAsState(
         targetValue = if (active) 0.34f else 0.18f,
         label = "glyphDisc",
     )
+    val glyphTint = if (active && activeTint != null) activeTint else LocalPlayerTint.current
     Box(
         modifier = Modifier
             .size(34.dp)
@@ -711,7 +747,7 @@ internal fun CircleGlyph(
             Icon(
                 imageVector = glyph,
                 contentDescription = contentDescription,
-                tint = LocalPlayerTint.current,
+                tint = glyphTint,
                 modifier = Modifier.size(19.dp),
             )
         }
@@ -765,9 +801,9 @@ private fun TransportGlyph(
     }
 }
 
-/** The skip glyphs' width, and their touch box, beside the larger play button. */
-private val PLAYER_SKIP_ICON_SIZE = 53.dp
-private val PLAYER_SKIP_TOUCH_SIZE = 53.dp
+/** The skip glyphs' width, and their touch box, beside the white play disc. */
+private val PLAYER_SKIP_ICON_SIZE = 46.dp
+private val PLAYER_SKIP_TOUCH_SIZE = 52.dp
 
 /**
  * The skip glyphs are drawn a little flatter than they are wide, so the pair

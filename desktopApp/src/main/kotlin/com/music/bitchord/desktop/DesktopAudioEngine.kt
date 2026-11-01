@@ -4,10 +4,8 @@ import com.music.bitchord.data.model.Song
 import com.music.bitchord.data.settings.TransitionWindow
 import com.music.bitchord.playback.EqCurve
 import com.music.bitchord.playback.TransitionFilter
-import com.music.bitchord.playback.smart.CrossfadeMode
 import com.music.bitchord.playback.smart.TransitionPlan
 import com.music.bitchord.playback.smart.TransitionStyle
-import com.music.bitchord.playback.smart.TrackAnalysis
 import com.music.bitchord.playback.smart.planTransition
 import java.util.concurrent.ConcurrentHashMap
 import kotlinx.coroutines.CoroutineScope
@@ -1366,8 +1364,7 @@ class DesktopPlaybackEngine(
                 _state.update { it.copy(transitionWindow = null) }
                 return
             }
-            val nextMs = (held.durationText.durationSeconds() * 1_000).toLong()
-            val plan = transitionPlan(track, held, nextMs, positionMs, duration)
+            val plan = transitionPlan(track, positionMs, duration)
             publishTransitionWindow(track, plan, duration)
             armAddonUpcoming(held, plan, positionMs, duration)
             return
@@ -1376,7 +1373,7 @@ class DesktopPlaybackEngine(
         val duration = (track.decoder.durationUs ?: return) / 1_000
         if (duration <= 0) return
 
-        val plan = transitionPlan(track, incoming.song, (incoming.decoder.durationUs ?: 0L) / 1_000, positionMs, duration)
+        val plan = transitionPlan(track, positionMs, duration)
         publishTransitionWindow(track, plan, duration)
 
         if (!plan.shouldStart || plan.blocked) return
@@ -1456,29 +1453,19 @@ class DesktopPlaybackEngine(
         resolveUpcoming(song, race = true)
     }
 
-    /** What the shared planner makes of this pair, on the listener's crossfade length. */
+    /** What the shared planner makes of this track, on the listener's crossfade length. */
     private fun transitionPlan(
         track: Track,
-        next: Song,
-        nextDurationMs: Long,
         positionMs: Long,
         durationMs: Long,
     ): TransitionPlan {
         val manualSeconds = crossfadeSeconds
         if (manualSeconds <= 0) return TransitionPlan()
         return planTransition(
-            // No beat evidence: the planner falls back to the two catalogue lengths.
-            analysis = TrackAnalysis(),
-            nextAnalysis = TrackAnalysis(),
             currentTrack = track.song.transitionInfo(durationMs),
-            nextTrack = next.transitionInfo(nextDurationMs),
             currentTime = positionMs / 1_000.0,
             duration = durationMs / 1_000.0,
             fadeSeconds = manualSeconds.toDouble(),
-            mode = CrossfadeMode.STANDARD,
-            advanced = false,
-            phraseBars = 0,
-            mixWindow = false,
         )
     }
 

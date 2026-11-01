@@ -39,7 +39,6 @@ import com.music.bitchord.data.model.Song
 @Composable
 internal fun DynamicIslandSettingsGroup() {
     val floating by DesktopDynamicIslandSettings.enabled.collectAsState()
-    val inTopBar by DesktopDynamicIslandSettings.inTopBar.collectAsState()
     val layout by DesktopDynamicIslandSettings.layout.collectAsState()
     val anchor by DesktopDynamicIslandSettings.anchor.collectAsState()
     val scale by DesktopDynamicIslandSettings.scale.collectAsState()
@@ -58,14 +57,7 @@ internal fun DynamicIslandSettingsGroup() {
         checked = floating,
         onCheckedChange = DesktopDynamicIslandSettings::setEnabled,
     )
-    SettingsToggle(
-        title = DesktopStrings["d_island_top_bar", "Island in the top bar"],
-        subtitle = DesktopStrings["d_island_top_bar_subtitle", "The slim island that shares the toolbar with the transport controls"],
-        checked = inTopBar,
-        onCheckedChange = DesktopDynamicIslandSettings::setInTopBar,
-    )
-
-    if (floating || inTopBar) {
+    if (floating) {
         val previewTitle = DesktopStrings["d_island_preview", "Preview"]
         val previewSubtitle = DesktopStrings["d_island_preview_subtitle", "How the island looks right now"]
         if (settingsRowVisible(previewTitle, previewSubtitle)) {
@@ -77,7 +69,7 @@ internal fun DynamicIslandSettingsGroup() {
         }
     }
 
-    if (floating || inTopBar) {
+    if (floating) {
         val layoutTitle = DesktopStrings["d_island_layout_title", "Island layout"]
         val layoutSubtitle = layout.detail
         if (settingsRowVisible(layoutTitle, layoutSubtitle)) {
@@ -262,6 +254,7 @@ private fun DynamicIslandPreview() {
     val previewSong = song ?: PREVIEW_SONG
     val previewLines = if (hasSong) lines else PREVIEW_LYRICS
     val previewPosition = { if (hasSong) DesktopFloatingLyricsManager.currentPositionMs.value else PREVIEW_POSITION_MS }
+    val previewDuration = { if (hasSong) DesktopFloatingLyricsManager.durationMs.value else PREVIEW_DURATION_MS }
     val previewProgress = {
         when {
             hasSong && DesktopFloatingLyricsManager.durationMs.value > 0L ->
@@ -293,6 +286,7 @@ private fun DynamicIslandPreview() {
             lines = previewLines,
             positionMs = previewPosition,
             progress = previewProgress,
+            durationMs = previewDuration,
             isPlaying = if (hasSong) isPlaying else true,
             repeatMode = repeatMode,
             layout = layout,
@@ -321,3 +315,4 @@ private val PREVIEW_LYRICS = listOf(
 )
 
 private const val PREVIEW_POSITION_MS = 5_600L
+private const val PREVIEW_DURATION_MS = 14_600L

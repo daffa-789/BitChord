@@ -80,6 +80,8 @@ fun ThinSlider(
     transitionWindow: ClosedFloatingPointRange<Float>? = null,
     idleHeight: Dp = 7.dp,
     activeHeight: Dp = 12.dp,
+    /** Diameter of the playhead knob; zero draws no knob, as the volume bar does. */
+    thumbSize: Dp = 0.dp,
     activeColor: Color = Color.White.copy(alpha = 0.92f),
     inactiveColor: Color = Color.White.copy(alpha = 0.26f),
     /** Halfway between the two track colours: visible against unplayed, invisible under played. */
@@ -124,8 +126,9 @@ fun ThinSlider(
     Box(
         modifier = modifier
             .fillMaxWidth()
-            // Generous invisible touch target — the visible bar is only ~7dp.
-            .height(activeHeight + 22.dp)
+            // Generous invisible touch target — the visible bar is only a few dp.
+            // The knob, when there is one, is the tallest thing the target holds.
+            .height(maxOf(activeHeight, thumbSize) + 22.dp)
             // One gesture loop for both taps and drags. Two separate detectors
             // — a drag one plus a tap one — meant taps never landed: the drag
             // detector took the pointer and a tap has no drag to report.
@@ -194,6 +197,19 @@ fun ThinSlider(
                         size.height,
                     ),
                     cornerRadius = radius,
+                )
+            }
+            if (thumbSize > 0.dp && fillFactor > 0f) {
+                // Drawn last so it sits over the played bar. Kept inside the
+                // ends rather than letting half of it hang off the track.
+                val r = thumbSize.toPx() / 2f
+                drawCircle(
+                    color = activeColor.copy(alpha = activeColor.alpha * fillFactor),
+                    radius = r,
+                    center = Offset(
+                        x = (size.width * fraction).coerceIn(r, size.width - r),
+                        y = size.height / 2f,
+                    ),
                 )
             }
         }

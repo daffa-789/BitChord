@@ -276,28 +276,6 @@ fun LazyListScope.feedMoreSkeleton() {
     item(key = "skeleton:more") { ShelfSkeleton() }
 }
 
-/**
- * The Library page's row of Replay cards while the listening history is still
- * being read — two cards at the real ones' 300dp width, credit-card ratio and
- * corner, so the row lands in place rather than pushing the shelves down.
- */
-@Composable
-fun ReplayCardRowSkeleton(modifier: Modifier = Modifier) {
-    LazyRow(
-        modifier = modifier.padding(vertical = 6.dp),
-        contentPadding = PaddingValues(horizontal = PAGE_GUTTER),
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-        userScrollEnabled = false,
-    ) {
-        items(2) {
-            ShimmerBox(
-                modifier = Modifier.width(300.dp).aspectRatio(1.586f),
-                shape = RoundedCornerShape(20.dp),
-            )
-        }
-    }
-}
-
 /** The signed-in library: saved collections, then the run of liked tracks. */
 fun LazyListScope.librarySkeleton() {
     item(key = "skeleton:library:shelf") { ShelfSkeleton() }

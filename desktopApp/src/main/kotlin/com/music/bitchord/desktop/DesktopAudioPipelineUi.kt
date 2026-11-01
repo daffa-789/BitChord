@@ -108,13 +108,13 @@ internal fun DesktopAudioPipelineDialog(
 private fun PipelineStage(title: String, content: @Composable () -> Unit) {
     Column {
         Text(
-            title.uppercase(),
+            title,
             color = DesktopSecondary,
             style = MaterialTheme.typography.labelMedium,
             fontWeight = FontWeight.SemiBold,
         )
         Spacer(Modifier.height(6.dp))
-        Column(Modifier.desktopCardInset(RoundedCornerShape(10.dp)).padding(vertical = 4.dp)) { content() }
+        Column(Modifier.desktopCardInset(RoundedCornerShape(8.dp)).padding(vertical = 4.dp)) { content() }
     }
 }
 

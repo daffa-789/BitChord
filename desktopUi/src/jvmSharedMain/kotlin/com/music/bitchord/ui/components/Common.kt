@@ -15,10 +15,6 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.font.FontWeight
-import com.music.bitchord.ui.player.MESH_CYCLE_MILLIS
-import com.music.bitchord.ui.player.MeshGradientBackground
-import com.music.bitchord.ui.player.WelcomeMeshPalettes
-import com.music.bitchord.ui.player.cyclingMeshPalette
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
@@ -69,9 +65,6 @@ import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.BasicTextField
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material3.Button
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
@@ -81,18 +74,18 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.drawscope.clipRect
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil3.compose.AsyncImage
 import com.music.bitchord.data.model.ROW_ART_PX
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.ui.theme.BcColors
+import com.music.bitchord.ui.theme.BcShapes
+import com.music.bitchord.ui.theme.BcSpacing
 import com.music.bitchord.data.model.isMatchPending
 import com.music.bitchord.data.model.isMatchMissing
 import androidx.compose.ui.draw.alpha
@@ -105,14 +98,7 @@ import androidx.compose.foundation.border
  * edge, which every other page now shares, so a track row, a card or a
  * heading starts at the same place whichever page it is on.
  */
-val PAGE_GUTTER = 16.dp
-
-/**
- * The inset the floating chrome sits at: the mini player, the tab bar and the
- * top bar's controls. The same as [PAGE_GUTTER], so the bars' edges line up
- * with the content scrolling beneath them rather than sitting just outside it.
- */
-val BAR_GUTTER = PAGE_GUTTER
+val PAGE_GUTTER = BcSpacing.pageGutter
 
 /** Where a divider under a track row starts: clear of the 52dp of artwork. */
 val ROW_DIVIDER_INSET = PAGE_GUTTER + 68.dp
@@ -127,22 +113,6 @@ val TRACK_NUMBER_WIDTH = 24.dp
 
 /** Where a divider under a numbered row starts: at its title, past the number. */
 val NUMBERED_ROW_DIVIDER_INSET = PAGE_GUTTER + TRACK_NUMBER_WIDTH + PAGE_GUTTER
-
-/**
- * How wide the floating bars at the foot of the page — the tab bar and the mini
- * player above it — are ever allowed to get.
- *
- * Both are fixed rows of controls with a fixed amount to say, not content that
- * benefits from room, and a phone is the width they were spaced for. Run right
- * across a tablet the four tabs end up a hand apart with their labels marooned
- * in the middle of nothing, and the mini player puts its artwork and its buttons
- * at opposite ends of the screen with a lake of frosted glass between. Past this
- * they stop growing and centre themselves over the page instead.
- *
- * Set clear of the widest phone (448dp less the two [PAGE_GUTTER]s is 428dp), so
- * on a phone it does nothing and the bars still line up with the page's content.
- */
-val FLOATING_BAR_MAX_WIDTH = 440.dp
 
 /**
  * Width of a card in the compact carousels — home shelves, library shelves and
@@ -222,7 +192,7 @@ data class LibraryGridSpec(val columns: Int, val cardWidth: Dp)
  * to `GridCells.Adaptive`, so a cover on a "Show all" page is the same size as
  * the same cover on those pages rather than noticeably smaller.
  */
-private val LIBRARY_GRID_MIN_CARD_WIDTH = 140.dp
+private val LIBRARY_GRID_MIN_CARD_WIDTH = 120.dp
 
 /** Gap between cards in a library grid, in both directions. */
 val LIBRARY_GRID_SPACING = 12.dp
@@ -230,7 +200,7 @@ val LIBRARY_GRID_SPACING = 12.dp
 private const val LIBRARY_GRID_MIN_COLUMNS = 2
 
 /** Library shelves never grow past this many across, however wide the screen. */
-private const val LIBRARY_GRID_MAX_COLUMNS = 5
+private const val LIBRARY_GRID_MAX_COLUMNS = 8
 
 /**
  * How a Library shelf's full "Show all" page lays out as a grid, in
@@ -333,6 +303,8 @@ fun SongRow(
      * different catalogues sit side by side: the Addons search.
      */
     showSourceQuality: Boolean = false,
+    /** The artwork's edge; search lists draw theirs smaller than the feeds. */
+    artSize: Dp = 52.dp,
 ) {
     val haptics = rememberHaptics()
     val swipeStateHolder = remember { mutableStateOf<SwipeToDismissBoxState?>(null) }
@@ -372,6 +344,7 @@ fun SongRow(
             searchPlayingStyle = searchPlayingStyle,
             selected = selected,
             showSourceQuality = showSourceQuality,
+            artSize = artSize,
         )
         return
     }
@@ -420,6 +393,7 @@ fun SongRow(
             searchPlayingStyle = searchPlayingStyle,
             selected = selected,
             showSourceQuality = showSourceQuality,
+            artSize = artSize,
         )
     }
 }
@@ -488,6 +462,7 @@ private fun SongRowContent(
     searchPlayingStyle: Boolean = false,
     selected: Boolean = false,
     showSourceQuality: Boolean = false,
+    artSize: Dp = 52.dp,
 ) {
     val titleColor by animateColorAsState(
         targetValue = if (isCurrent) activeTint else MaterialTheme.colorScheme.onBackground,
@@ -516,7 +491,7 @@ private fun SongRowContent(
             // [TRACK_NUMBER_WIDTH]). Same height as the artwork, so rows stay
             // level.
             Box(
-                Modifier.width(TRACK_NUMBER_WIDTH).height(52.dp),
+                Modifier.width(TRACK_NUMBER_WIDTH).height(artSize),
                 contentAlignment = Alignment.Center,
             ) {
                 if (searchPlayingStyle && isCurrent && isPlaying) {
@@ -538,7 +513,7 @@ private fun SongRowContent(
                 }
             }
         } else {
-            Box(Modifier.size(52.dp)) {
+            Box(Modifier.size(artSize)) {
                 AsyncImage(
                     model = com.music.bitchord.ui.player.rememberRemoteArtworkUrl(song)?.artworkAt(ROW_ART_PX),
                     contentDescription = null,
@@ -783,19 +758,16 @@ fun PullToRefresh(
 }
 
 /**
- * The prompt atop Home while signed out: a card in the welcome pages' living
- * mesh, so the one thing Home asks of a signed-out listener looks like an
- * invitation from the app rather than a settings row that wandered in.
- *
- * Drawn white-on-colour in either theme, like Replay and the welcome — the
- * mesh is the card, and white type is what sits on colour.
+ * The prompt atop Home while signed out: a quiet raised panel rather than a
+ * living gradient, because it now sits above the desktop's dock and Quick
+ * picks and should read as a step to take, not as a second hero.
  */
 @Composable
 fun SignInBanner(onSignIn: () -> Unit, modifier: Modifier = Modifier) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    val scale by animateFloatAsState(if (pressed) 0.98f else 1f, spring(stiffness = 900f), label = "signInScale")
-    Box(
+    val scale by animateFloatAsState(if (pressed) 0.995f else 1f, spring(stiffness = 900f), label = "signInScale")
+    Row(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = PAGE_GUTTER, vertical = 8.dp)
@@ -803,48 +775,41 @@ fun SignInBanner(onSignIn: () -> Unit, modifier: Modifier = Modifier) {
                 scaleX = scale
                 scaleY = scale
             }
-            .clip(RoundedCornerShape(22.dp))
-            .clickable(interactionSource = interaction, indication = null, onClick = onSignIn),
+            .clip(RoundedCornerShape(BcShapes.card))
+            .background(BcColors.Raised)
+            .border(1.dp, BcColors.Hairline, RoundedCornerShape(BcShapes.card))
+            .clickable(interactionSource = interaction, indication = null, onClick = onSignIn)
+            .padding(horizontal = 18.dp, vertical = 14.dp),
+        verticalAlignment = Alignment.CenterVertically,
     ) {
-        // A card is a few hundred dp the reader is looking straight at, which
-        // is the case the mesh lets keep moving — see its `continuous` note.
-        MeshGradientBackground(
-            palette = cyclingMeshPalette(WelcomeMeshPalettes),
-            modifier = Modifier.matchParentSize(),
-            continuous = true,
-            driftMillis = 6_000,
-            blurRadius = 36.dp,
-            colorFadeMillis = MESH_CYCLE_MILLIS,
+        Text(
+            text = stringResource(Res.string.sign_in_youtube_music),
+            style = MaterialTheme.typography.titleMedium,
+            fontWeight = FontWeight.SemiBold,
+            color = BcColors.TextPrimary,
+            modifier = Modifier.weight(1f),
         )
-        Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 20.dp, bottom = 18.dp)) {
-            Text(
-                text = stringResource(Res.string.sign_in_youtube_music),
-                style = MaterialTheme.typography.headlineMedium,
-                fontWeight = FontWeight.W800,
-                color = Color.White,
+        Spacer(Modifier.width(16.dp))
+        Row(
+            Modifier
+                .height(36.dp)
+                .clip(CircleShape)
+                .background(BcColors.Action)
+                .padding(start = 14.dp, end = 18.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Image(
+                painter = painterResource(Res.drawable.ic_google_g),
+                contentDescription = null,
+                modifier = Modifier.size(16.dp),
             )
-            Spacer(Modifier.height(16.dp))
-            Row(
-                Modifier
-                    .clip(CircleShape)
-                    .background(Color.White)
-                    .padding(start = 16.dp, end = 20.dp, top = 10.dp, bottom = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Image(
-                    painter = painterResource(Res.drawable.ic_google_g),
-                    contentDescription = null,
-                    modifier = Modifier.size(18.dp),
-                )
-                Spacer(Modifier.width(8.dp))
-                Text(
-                    text = stringResource(Res.string.sign_in_with_google),
-                    style = MaterialTheme.typography.titleMedium,
-                    fontSize = 15.sp,
-                    fontWeight = FontWeight.W700,
-                    color = Color.Black,
-                )
-            }
+            Spacer(Modifier.width(8.dp))
+            Text(
+                text = stringResource(Res.string.sign_in_with_google),
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold,
+                color = Color.Black,
+            )
         }
     }
 }
@@ -872,72 +837,5 @@ fun MessageState(
         if (actionLabel != null && onAction != null) {
             Button(onClick = onAction) { Text(actionLabel) }
         }
-    }
-}
-
-/**
- * The narrow, pill-shaped text field this app uses instead of Material's
- * `OutlinedTextField` — the same box the alerts and the search bar are built
- * from.
- *
- * Flat `surfaceVariant`, an 11dp radius, no outline and no floating label. A
- * stock `OutlinedTextField` dropped onto one of these pages reads as a widget
- * borrowed from another app: it is the only thing on the screen wearing a
- * border, and its label reserves a band of empty space above every row it sits
- * in whether or not there is a label to put there.
- */
-@Composable
-fun PillTextField(
-    value: String,
-    onValueChange: (String) -> Unit,
-    placeholder: String,
-    modifier: Modifier = Modifier,
-    enabled: Boolean = true,
-    isPassword: Boolean = false,
-    /**
-     * What the box is filled with.
-     *
-     * The default is the fill the alerts want, since their frosted card is
-     * `surface` and this sits on top of it. A field dropped into a settings
-     * card has to be told otherwise: those cards are *already* `surfaceVariant`
-     * (see `SettingsGroup`), and a field the colour of the card it is in is a
-     * field nobody can see.
-     */
-    container: Color = MaterialTheme.colorScheme.surfaceVariant,
-    keyboardOptions: KeyboardOptions = KeyboardOptions.Default,
-    keyboardActions: KeyboardActions = KeyboardActions.Default,
-) {
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .height(40.dp)
-            .background(container, RoundedCornerShape(11.dp))
-            .padding(horizontal = 12.dp),
-        contentAlignment = Alignment.CenterStart,
-    ) {
-        if (value.isEmpty()) {
-            Text(
-                text = placeholder,
-                style = MaterialTheme.typography.bodyMedium.copy(fontSize = 15.sp),
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-        }
-        BasicTextField(
-            value = value,
-            onValueChange = onValueChange,
-            enabled = enabled,
-            singleLine = true,
-            textStyle = MaterialTheme.typography.bodyMedium.copy(
-                fontSize = 15.sp,
-                color = MaterialTheme.colorScheme.onBackground,
-            ),
-            cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            visualTransformation = if (isPassword) PasswordVisualTransformation() else VisualTransformation.None,
-            keyboardOptions = keyboardOptions,
-            keyboardActions = keyboardActions,
-            modifier = Modifier.fillMaxWidth(),
-        )
     }
 }

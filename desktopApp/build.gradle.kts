@@ -718,13 +718,6 @@ compose.desktop {
             jvmArgs("-Dbitchord.lastfm.key=$lastfmApiKey", "-Dbitchord.lastfm.secret=$lastfmSecret")
         }
 
-        buildTypes.release.proguard {
-            isEnabled.set(false)
-            obfuscate.set(false)
-            optimize.set(false)
-            configurationFiles.from(project.file("packaging/proguard-rules.pro"))
-        }
-
         nativeDistributions {
             targetFormats(
                 TargetFormat.Dmg,

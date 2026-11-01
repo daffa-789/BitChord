@@ -23,27 +23,28 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import com.music.bitchord.ui.theme.BcColors
+import com.music.bitchord.ui.theme.BcShapes
 
 // The look every modal card in the app shares.
 
 /** The card fill. */
-internal val DesktopCardFill = Color(0xFA1A1A1D)
+internal val DesktopCardFill = BcColors.Surface.copy(alpha = 0.98f)
 
 /** A block inside a card — a settings group — lifted just off the fill. */
-internal val DesktopCardInsetFill = Color(0x14FFFFFF)
+internal val DesktopCardInsetFill = BcColors.Hairline
 
 /** The hairline that bounds a card, and separates one row from the next. */
-internal val DesktopCardEdge = Color(0x1FFFFFFF)
+internal val DesktopCardEdge = BcColors.HairlineStrong
 
 /** What a row reads at while the pointer is on it. */
-internal val DesktopRowHover = Color(0x1AFFFFFF)
+internal val DesktopRowHover = BcColors.HairlineStrong
 
 /** The scrim a modal card sits on. */
-internal val DesktopScrim = Color(0x8C000000)
+internal val DesktopScrim = BcColors.Canvas.copy(alpha = 0.72f)
 
 /** Card, hairline and all. */
 internal fun Modifier.desktopCard(shape: Shape): Modifier =
@@ -161,7 +162,7 @@ internal fun DesktopDialogPanel(
                     onClick = onDismiss,
                 ),
         )
-        val shape = RoundedCornerShape(20.dp)
+        val shape = RoundedCornerShape(BcShapes.dock)
         Box(
             Modifier
                 .widthIn(max = maxWidth.dp)

@@ -4,6 +4,8 @@ import com.music.bitchord.sharedui.resources.*
 import org.jetbrains.compose.resources.DrawableResource
 import org.jetbrains.compose.resources.painterResource
 import org.jetbrains.compose.resources.stringResource
+import androidx.compose.foundation.background
+import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.BoxWithConstraints
@@ -25,6 +27,7 @@ import androidx.compose.foundation.lazy.grid.LazyGridState
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.items
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
@@ -35,6 +38,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
@@ -137,7 +141,17 @@ fun LibraryScreen(
             }
             item(key = "replay") { replay() }
             if (links.isNotEmpty()) {
-                item(key = "links") { LibraryLinkList(links = links, onClick = onShelfItemClick) }
+                item(key = "links") {
+                    BoxWithConstraints(Modifier.fillMaxWidth()) {
+                        LibraryLinkList(
+                            links = links,
+                            onClick = onShelfItemClick,
+                            // A page this wide has no business spending a screenful on four
+                            // folder rows: the folders become a rail and the shelves start sooner.
+                            rail = maxWidth >= 720.dp,
+                        )
+                    }
+                }
             }
             if (deviceItems.isNotEmpty()) {
                 item(key = "shelf:$onDevice") {
@@ -234,7 +248,23 @@ data class LibraryLink(val item: ShelfItem, val icon: ImageVector, val logo: Dra
  * look alike because none of them has artwork.
  */
 @Composable
-private fun LibraryLinkList(links: List<LibraryLink>, onClick: (ShelfItem) -> Unit) {
+private fun LibraryLinkList(
+    links: List<LibraryLink>,
+    onClick: (ShelfItem) -> Unit,
+    /** A single scrolling rail instead of the stacked list — the wide-page arrangement. */
+    rail: Boolean = false,
+) {
+    if (rail) {
+        ShelfRow(
+            contentPadding = PaddingValues(start = PAGE_GUTTER, end = PAGE_GUTTER, top = 4.dp, bottom = 22.dp),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+        ) {
+            items(links, key = { it.item.browseId ?: it.item.title }) { link ->
+                LibraryLinkChip(link = link, onClick = onClick)
+            }
+        }
+        return
+    }
     Column(Modifier.padding(top = 4.dp, bottom = 22.dp)) {
         links.forEachIndexed { index, link ->
             Row(
@@ -286,6 +316,52 @@ private fun LibraryLinkList(links: List<LibraryLink>, onClick: (ShelfItem) -> Un
                 )
             }
         }
+    }
+}
+
+@Composable
+private fun LibraryLinkChip(link: LibraryLink, onClick: (ShelfItem) -> Unit) {
+    val shape = RoundedCornerShape(percent = 50)
+    Row(
+        modifier = Modifier
+            .heightIn(min = 36.dp)
+            .clip(shape)
+            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.55f))
+            .border(1.dp, MaterialTheme.colorScheme.outline, shape)
+            .clickable { onClick(link.item) }
+            .padding(start = 12.dp, end = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (link.logo != null) {
+            Icon(
+                painter = painterResource(link.logo),
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(18.dp),
+            )
+        } else {
+            Icon(
+                imageVector = link.icon,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onBackground,
+                modifier = Modifier.size(18.dp),
+            )
+        }
+        Spacer(Modifier.width(8.dp))
+        Text(
+            text = link.item.title,
+            style = MaterialTheme.typography.bodyMedium,
+            color = MaterialTheme.colorScheme.onBackground,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis,
+        )
+        Spacer(Modifier.width(4.dp))
+        Icon(
+            imageVector = BitChordIcons.ChevronRight,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = .6f),
+            modifier = Modifier.size(16.dp),
+        )
     }
 }
 

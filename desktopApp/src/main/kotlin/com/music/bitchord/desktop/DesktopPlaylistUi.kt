@@ -640,7 +640,7 @@ private fun DialogHeading(title: String, subtitle: String) {
 @Composable
 private fun DialogSectionHeading(text: String) {
     Text(
-        text.uppercase(),
+        text,
         style = MaterialTheme.typography.labelSmall,
         color = DesktopSecondary,
         modifier = Modifier.padding(start = 22.dp, end = 22.dp, top = 14.dp, bottom = 4.dp),

@@ -56,6 +56,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.addOutline
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.clipPath
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawWithContent
@@ -75,6 +76,7 @@ import coil3.request.ImageRequest
 import com.music.bitchord.ui.components.ExplicitBadge
 import com.music.bitchord.ui.haptics.Haptic
 import com.music.bitchord.ui.icons.BitChordIcons
+import com.music.bitchord.ui.theme.BcColors
 import com.music.bitchord.ui.theme.stableStatusBarInsets
 import com.music.bitchord.data.canvas.CanvasArtwork
 import com.music.bitchord.data.model.LikeStatus
@@ -90,7 +92,7 @@ import com.music.bitchord.data.model.Song
  * across: past a certain measure the extra width is further for the eye to
  * travel back rather than more room for the words.
  */
-private val LANDSCAPE_PLAYER_MAX_WIDTH = 1100.dp
+private val LANDSCAPE_PLAYER_MAX_WIDTH = 1040.dp
 
 /**
  * Below this height the landscape player tightens its right column — smaller
@@ -118,8 +120,8 @@ private const val LANDSCAPE_PANE_FADE_OUT_MS = 140
 /** Which of its three things the player's content column is showing. */
 internal enum class PlayerPane { Main, Lyrics, Queue }
 
-/** The landscape sleeve's corner radius, at rest. */
-internal val LANDSCAPE_ART_CORNER = 10.dp
+/** The landscape sleeve's corner radius, at rest: the Night Stage artwork radius. */
+internal val LANDSCAPE_ART_CORNER = 8.dp
 
 /** The landscape sleeve's shape at rest, for a caller with no docking to do. */
 private val LandscapeArtShape = RoundedCornerShape(LANDSCAPE_ART_CORNER)
@@ -136,6 +138,9 @@ private val LANDSCAPE_HANDLE_STRIP = 24.dp
  * phone-height window keeps the sleeve filling the column above its row.
  */
 private val LANDSCAPE_DESKTOP_CONTROLS_RESERVE = 300.dp
+
+/** The largest the desktop sleeve is allowed to grow, however much room is left. */
+private val LANDSCAPE_DESKTOP_ART_MAX = 420.dp
 
 /**
  * The player in a landscape window — a tablet, or a phone on its side. See
@@ -248,7 +253,14 @@ internal fun LandscapePlayerLayout(
                         ) {
                             artwork(
                                 Modifier.size(
-                                    minOf(maxWidth, maxHeight - LANDSCAPE_DESKTOP_CONTROLS_RESERVE),
+                                    // Capped beyond a certain size: a sleeve past
+                                    // this stops reading as the cover of the song
+                                    // and starts reading as a wall.
+                                    minOf(
+                                        maxWidth,
+                                        maxHeight - LANDSCAPE_DESKTOP_CONTROLS_RESERVE,
+                                        LANDSCAPE_DESKTOP_ART_MAX,
+                                    ),
                                 ),
                                 true,
                             )
@@ -365,6 +377,8 @@ internal fun LandscapeArtwork(
     sleeveShape: () -> Shape = { LandscapeArtShape },
     /** How much of the sleeve's shadow is cast, 1 at rest. */
     shadowFraction: () -> Float = { 1f },
+    /** The shadow's colour: the player hands it a trace of the artwork's own. */
+    shadowColor: Color = Color.Black,
     /**
      * The colour of the aura that blooms around the sleeve while an Automix blend runs. Tint it
      * with the artwork's own palette where one is at hand; it defaults to a neutral light.
@@ -428,6 +442,8 @@ internal fun LandscapeArtwork(
                 // tile a shadow reads as a second, darker square.
                 .graphicsLayer {
                     shadowElevation = if (casts) 14.dp.toPx() * shadowFraction() else 0f
+                    ambientShadowColor = shadowColor
+                    spotShadowColor = shadowColor
                     shape = sleeveShape()
                     // As `.shadow` did: it clips only when it casts.
                     clip = casts
@@ -436,7 +452,22 @@ internal fun LandscapeArtwork(
                     shape = sleeveShape()
                     clip = true
                 }
-                .background(Color.Black.copy(alpha = 0.18f)),
+                .background(Color.Black.copy(alpha = 0.18f))
+                // The edge the sleeve is outlined with, where a dark cover
+                // would otherwise run straight into the night behind it.
+                .drawWithContent {
+                    drawContent()
+                    val edge = shadowFraction()
+                    if (edge > 0f) {
+                        drawPath(
+                            path = Path().apply {
+                                addOutline(sleeveShape().createOutline(size, layoutDirection, this@drawWithContent))
+                            },
+                            color = Color.White.copy(alpha = 0.10f * edge),
+                            style = Stroke(1.dp.toPx()),
+                        )
+                    }
+                },
             contentAlignment = Alignment.Center,
         ) {
             if (!artLoaded && !canvasRendered) {
@@ -596,6 +627,7 @@ internal fun LandscapeCredits(
                 onClick = onToggleLike,
                 active = liked,
                 haptic = if (liked) Haptic.ToggleOff else Haptic.ToggleOn,
+                activeTint = BcColors.Live,
             )
             Spacer(Modifier.width(8.dp))
         }

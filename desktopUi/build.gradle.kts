@@ -96,7 +96,9 @@ kotlin {
             api("dev.chrisbanes.haze:haze:$haze")
             api("dev.chrisbanes.haze:haze-materials:$haze")
             implementation("org.jetbrains.kotlinx:kotlinx-coroutines-core:${property("coroutines")}")
-            implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:${property("serialization")}")
+            // collectAsStateWithLifecycle hops onto Dispatchers.Main, and Compose Desktop bundles no
+            // Main dispatcher: without this every lifecycle collector threw on startup.
+            implementation("org.jetbrains.kotlinx:kotlinx-coroutines-swing:${property("coroutines")}")
         }
         // See `cmp` above.
         jvmMain.dependencies {

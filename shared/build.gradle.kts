@@ -1,4 +1,5 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
+import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 /** Versions shared with the desktop modules; see the block in gradle.properties. */
 fun property(name: String): String = providers.gradleProperty("bitchord.lib.$name").get()
@@ -9,13 +10,33 @@ val serialization = property("serialization")
 
 plugins {
     id("org.jetbrains.kotlin.multiplatform")
+    id("com.android.library")
     id("org.jetbrains.kotlin.plugin.serialization")
 }
 
 kotlin {
+    androidTarget {
+        compilerOptions {
+            jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+
     jvm {
         compilerOptions {
             jvmTarget.set(JvmTarget.JVM_17)
+        }
+    }
+
+    val xcf = XCFramework("BitChordShared")
+    listOf(
+        iosX64(),
+        iosArm64(),
+        iosSimulatorArm64()
+    ).forEach { iosTarget ->
+        iosTarget.binaries.framework {
+            baseName = "BitChordShared"
+            isStatic = true
+            xcf.add(this)
         }
     }
 
@@ -26,7 +47,6 @@ kotlin {
             dependsOn(commonMain.get())
             dependencies {
                 // The network stack the lyrics providers and the YouTube Music client run on.
-                api("io.ktor:ktor-client-core:$ktor")
                 api("io.ktor:ktor-client-okhttp:$ktor")
                 api("io.ktor:ktor-client-websockets:$ktor")
                 api("io.ktor:ktor-client-content-negotiation:$ktor")
@@ -39,9 +59,11 @@ kotlin {
                 compileOnly("com.github.TeamNewPipe:NewPipeExtractor:${property("newpipe")}")
             }
         }
+        androidMain.get().dependsOn(jvmSharedMain)
         jvmMain.get().dependsOn(jvmSharedMain)
 
         commonMain.dependencies {
+            api("io.ktor:ktor-client-core:$ktor")
             implementation("org.jetbrains.kotlinx:kotlinx-serialization-json:$serialization")
         }
         commonTest.dependencies {
@@ -51,4 +73,9 @@ kotlin {
             implementation("com.squareup.okhttp3:mockwebserver:5.3.2")
         }
     }
+}
+
+android {
+    namespace = "com.music.bitchord.shared"
+    compileSdk = 36
 }

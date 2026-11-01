@@ -265,28 +265,25 @@ private fun fallbackMoodColor(title: String): Color = when ((title.hashCode() an
 /** Gap between mood cards, in both directions. */
 private val MOOD_SPACING = 12.dp
 
-private val MOOD_CARD_SHAPE = RoundedCornerShape(18.dp)
+private val MOOD_CARD_SHAPE = RoundedCornerShape(12.dp)
 
-/** Width over height; a two-column phone row lands at about 100dp tall. */
-const val MOOD_CARD_ASPECT = 1.72f
+/** Width over height; a four-column desktop row lands at about 76dp tall. */
+const val MOOD_CARD_ASPECT = 1.9f
 
 /** How much of the card the solid stripe covers before the artwork starts. */
 private const val MOOD_STRIPE_FRACTION = .28f
 
 /**
- * The narrowest a mood card is let get before the row drops a column.
- *
- * Pitched so every phone still gets its two (the widest, 448dp, has room for
- * 1.8 of these), while a tablet or a window lays out as many as fit rather
- * than two cards each half a screen wide.
+ * A tile earns a column by having room for its label, not by being as wide as a
+ * phone card. The desktop has the width to show the whole catalogue at once:
+ * four columns beside the sidebar, six on a wide display.
  */
-private val MOOD_MIN_CARD_WIDTH = 220.dp
-
-private const val MOOD_MAX_COLUMNS = 6
-
-private fun moodColumns(available: Dp): Int {
-    val row = available - PAGE_GUTTER * 2
-    return ((row + MOOD_SPACING) / (MOOD_MIN_CARD_WIDTH + MOOD_SPACING)).toInt().coerceIn(2, MOOD_MAX_COLUMNS)
+private fun moodColumns(available: Dp): Int = when {
+    available >= 1_150.dp -> 6
+    available >= 900.dp -> 5
+    available >= 600.dp -> 4
+    available >= 380.dp -> 3
+    else -> 2
 }
 
 @Composable

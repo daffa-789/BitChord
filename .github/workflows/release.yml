@@ -298,9 +298,129 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
+  android:
+    name: Android Release APK
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Setup Keystore if secret present
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "$KEYSTORE_BASE64" | base64 -d > bitchord-release.jks
+            {
+              echo "storeFile=bitchord-release.jks"
+              echo "storePassword=$KEYSTORE_PASSWORD"
+              echo "keyAlias=$KEY_ALIAS"
+              echo "keyPassword=$KEY_PASSWORD"
+            } > keystore.properties
+            echo "Keystore configured for release signing."
+          else
+            echo "No KEYSTORE_BASE64 secret provided — building unsigned release APK."
+          fi
+
+      - name: Assemble Release APK
+        run: >
+          ./gradlew :app:assembleRelease
+          -Pbitchord.version=${{ needs.meta.outputs.version }}
+          -Pbitchord.build=${{ needs.meta.outputs.build }}
+
+      - name: Stage Android artefacts
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          find app/build/outputs/apk -type f -name "*.apk" -exec cp {} dist/ \;
+          ls -l dist
+
+      - name: Hash Android APKs
+        run: |
+          set -euo pipefail
+          cd dist
+          for file in *.apk; do
+            [ -f "$file" ] || continue
+            printf '%s  %s\n' "$(sha256sum -- "$file" | cut -d' ' -f1)" "$file"
+          done > SHA256SUMS.android.txt
+          cat SHA256SUMS.android.txt
+
+      - name: Upload Android artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-android
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
+  ios:
+    name: iOS XCFramework
+    needs: meta
+    runs-on: macos-14
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ needs.meta.outputs.tag }}
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      - name: Assemble XCFramework
+        run: >
+          ./gradlew :shared:assembleBitChordSharedReleaseXCFramework
+          -Pbitchord.version=${{ needs.meta.outputs.version }}
+          -Pbitchord.build=${{ needs.meta.outputs.build }}
+
+      - name: Package and stage iOS XCFramework
+        run: |
+          set -euo pipefail
+          mkdir -p dist
+          cd shared/build/XCFrameworks/release
+          zip -r "../../../../dist/BitChord-${{ needs.meta.outputs.version }}-ios-shared.xcframework.zip" BitChordShared.xcframework
+          cd -
+          ls -l dist
+
+      - name: Hash iOS artefacts
+        run: |
+          set -euo pipefail
+          cd dist
+          for file in *.zip; do
+            [ -f "$file" ] || continue
+            printf '%s  %s\n' "$(shasum -a 256 -- "$file" | cut -d' ' -f1)" "$file"
+          done > SHA256SUMS.ios.txt
+          cat SHA256SUMS.ios.txt
+
+      - name: Upload iOS artefacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist-ios
+          path: dist/
+          if-no-files-found: error
+          retention-days: 30
+
   release:
     name: Publish
-    needs: [meta, windows, linux, macos]
+    needs: [meta, windows, linux, macos, android, ios]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -316,8 +436,8 @@ jobs:
         run: |
           set -euo pipefail
           cd dist
-          sort -u SHA256SUMS.windows.txt SHA256SUMS.linux.txt SHA256SUMS.macos.txt > SHA256SUMS.txt
-          rm SHA256SUMS.windows.txt SHA256SUMS.linux.txt SHA256SUMS.macos.txt
+          sort -u SHA256SUMS.*.txt > SHA256SUMS.txt
+          rm -f SHA256SUMS.*.txt
           sha256sum --check SHA256SUMS.txt
           ls -l
 
@@ -331,7 +451,7 @@ jobs:
           set -euo pipefail
           cd dist
           {
-            echo "BitChord ${VERSION} for desktop: Windows, Linux, and macOS (Apple Silicon). Built by this workflow run from \`${COMMIT:0:10}\`."
+            echo "BitChord ${VERSION}: Multiplatform release for Android, iOS (Shared), Windows, Linux, and macOS (Apple Silicon). Built by this workflow run from \`${COMMIT:0:10}\`."
             echo
             if [ "$PRERELEASE" = "true" ]; then
               echo "> [!NOTE]"
@@ -349,6 +469,8 @@ jobs:
             echo
             echo '## Which one to take'
             echo
+            echo '- **Android** — `*.apk` for Android phones and tablets (ARM64, ARMv7, x86_64, or universal).'
+            echo '- **iOS** — `BitChord-*-ios-shared.xcframework.zip` containing `BitChordShared.xcframework` for iOS apps.'
             echo '- **macOS** — `BitChord-*.dmg` for Apple Silicon (macOS 12+ / arm64).'
             echo '- **Windows** — `BitChord-*.msi` for a per-user installer (no admin needed);'
             echo '  `BitChord-*.exe` is the same installer as a single file; `*-windows-portable.zip`'

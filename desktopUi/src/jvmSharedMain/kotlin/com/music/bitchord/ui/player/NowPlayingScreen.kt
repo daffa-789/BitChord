@@ -18,6 +18,7 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.animation.core.Animatable
+import com.music.bitchord.ui.theme.BcColors
 import com.music.bitchord.ui.theme.rememberPlayerTint
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.channels.Channel
@@ -102,10 +103,12 @@ import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.layout.positionOnScreen
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.geometry.lerp
+import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.zIndex
 import androidx.compose.ui.graphics.BlendMode
@@ -1888,6 +1891,9 @@ fun NowPlayingScreen(
                     dockFrame.cornerShape(lerp(dock.miniArtCorner(), LANDSCAPE_ART_CORNER, t) / scale)
                 }
             }
+            val landscapeShadow = LocalPlayerTint.current.let { tint ->
+                Color(tint.red * 0.10f, tint.green * 0.10f, tint.blue * 0.10f)
+            }
 
             Box(modifier = modifier.fillMaxSize().then(dockHost)) {
                 LandscapePlayerLayout(
@@ -1917,6 +1923,7 @@ fun NowPlayingScreen(
                             // Let go of on the way to the mini player, whose
                             // cover sits flat in its bar.
                             shadowFraction = dockT,
+                            shadowColor = landscapeShadow,
                             // The desktop sleeve rounds its Automix aura to the cover's corners;
                             // the phone-landscape sleeve keeps the square-bounded bloom it always had.
                             glowRounded = glowRounded,
@@ -2896,6 +2903,13 @@ fun NowPlayingScreen(
                             val t = dockT()
                             return if (dock == null || t >= 1f) corner else lerp(dock.miniArtCorner(), corner, t)
                         }
+                        // A shadow carrying a trace of the sleeve's own colour: a
+                        // neutral black drop under artwork reads as a hole in the
+                        // backdrop, and the player's tint is nearly white, so it is
+                        // scaled right down before it is used as light.
+                        val sleeveShadow = LocalPlayerTint.current.let { tint ->
+                            Color(tint.red * 0.10f, tint.green * 0.10f, tint.blue * 0.10f)
+                        }
 
                         // The sleeve proper — card, banner and thumbnail in turn, see
                         // [sleeveRect]. Separate from the slot below, which keeps the
@@ -2983,6 +2997,8 @@ fun NowPlayingScreen(
                                     } else {
                                         0f
                                     }
+                                    ambientShadowColor = sleeveShadow
+                                    spotShadowColor = sleeveShadow
                                     shape = dockFrame.cornerShape(sleeveCorner())
                                     // What `.shadow` did: it clips only when it casts.
                                     clip = art.loaded
@@ -3015,6 +3031,23 @@ fun NowPlayingScreen(
                                                 endY = size.height,
                                             ),
                                             blendMode = BlendMode.DstIn,
+                                        )
+                                    }
+                                    // The one line that keeps a dark sleeve from
+                                    // bleeding into a dark backdrop. Let go of as
+                                    // the banner and the mini player's cover take
+                                    // over, neither of which has an edge to mark.
+                                    val edge = (1f - shown) * dockT()
+                                    if (edge > 0f) {
+                                        val stroke = 1.dp.toPx()
+                                        drawRoundRect(
+                                            color = Color.White.copy(alpha = 0.10f * edge),
+                                            topLeft = Offset(stroke / 2f, stroke / 2f),
+                                            size = Size(size.width - stroke, size.height - stroke),
+                                            cornerRadius = CornerRadius(
+                                                (sleeveCorner().toPx() - stroke / 2f).coerceAtLeast(0f),
+                                            ),
+                                            style = Stroke(stroke),
                                         )
                                     }
                                 },
@@ -3337,7 +3370,8 @@ fun NowPlayingScreen(
                                         MarqueeText(
                                             text = song.title,
                                             style = MaterialTheme.typography.titleLarge.copy(
-                                                fontSize = 20.sp,
+                                                fontSize = 24.sp,
+                                                lineHeight = 30.sp,
                                             ),
                                             color = Color.White,
                                             enabled = scrolling,
@@ -3356,11 +3390,10 @@ fun NowPlayingScreen(
                                             credits = remember(song.artist, song.artists, song.artistId) {
                                                 artistCredits(song.artist, song.artists, song.artistId)
                                             },
-                                            style = MaterialTheme.typography.titleLarge.copy(
-                                                fontWeight = FontWeight.W500,
-                                                fontSize = 20.sp,
+                                            style = MaterialTheme.typography.bodyMedium.copy(
+                                                fontWeight = FontWeight.Medium,
                                             ),
-                                            color = LocalPlayerTint.current.copy(alpha = 0.55f),
+                                            color = LocalPlayerTint.current.copy(alpha = 0.62f),
                                             enabled = scrolling,
                                             // A title that's also scrolling gets to go first —
                                             // starting together reads as clutter, so the artist
@@ -3388,6 +3421,7 @@ fun NowPlayingScreen(
                                     onClick = onToggleLike,
                                     active = liked,
                                     haptic = if (liked) Haptic.ToggleOff else Haptic.ToggleOn,
+                                    activeTint = BcColors.Live,
                                 )
                                 Spacer(Modifier.width(8.dp))
                             }

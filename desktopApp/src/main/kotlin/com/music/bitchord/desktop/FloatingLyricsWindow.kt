@@ -66,6 +66,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shadow
+import androidx.compose.ui.graphics.compositeOver
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.PointerEventType
@@ -83,6 +84,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.music.bitchord.data.lyrics.LyricLine
 import com.music.bitchord.data.model.Song
+import com.music.bitchord.data.model.artworkAt
 import com.music.bitchord.ui.icons.BitChordIcons
 import kotlinx.coroutines.flow.MutableStateFlow
 
@@ -129,6 +131,14 @@ internal object DesktopFloatingLyricsManager {
     var onPrevious: (() -> Unit)? = null
     var onToggleRepeat: (() -> Unit)? = null
     var onOpenNowPlaying: (() -> Unit)? = null
+
+    /**
+     * Jumps the playhead to a fraction of the song, for the scrub row under the FULL capsule.
+     *
+     * Only fires on release: a drag previews the position locally and asks the engine to move once,
+     * so scrubbing a four-minute song is one seek rather than hundreds.
+     */
+    var onSeek: ((Float) -> Unit)? = null
 
     /** Jumps the queue to a row's index — the same move the queue sheet's tap makes. */
     var onPlayQueueIndex: ((Int) -> Unit)? = null
@@ -201,15 +211,18 @@ private fun islandLines(lines: List<LyricLine>?, song: Song?, activeIndex: Int):
 /** The island's own measurements, before the user's size multiplier. */
 internal val IslandLayout.baseWidth: Dp
     get() = when (this) {
-        IslandLayout.FULL -> 660.dp
+        IslandLayout.FULL -> 680.dp
         IslandLayout.COMPACT -> 540.dp
         IslandLayout.MINI -> 360.dp
     }
 
 internal val IslandLayout.baseHeight: Dp
     get() = when (this) {
-        IslandLayout.FULL -> 98.dp
-        IslandLayout.COMPACT -> 62.dp
+        // FULL carries a scrub row under its three blocks of content, so it is taller than the
+        // pill the other two rungs draw: 116 is cover row + transport row + scrub row, with the
+        // few dp of slack the rounded ends need to not crowd the glass.
+        IslandLayout.FULL -> 116.dp
+        IslandLayout.COMPACT -> 64.dp
         IslandLayout.MINI -> 44.dp
     }
 
@@ -236,6 +249,7 @@ internal fun DynamicIslandCard(
     lines: List<LyricLine>?,
     positionMs: () -> Long,
     progress: () -> Float,
+    durationMs: () -> Long,
     isPlaying: Boolean,
     repeatMode: DesktopRepeatMode,
     layout: IslandLayout,
@@ -248,6 +262,10 @@ internal fun DynamicIslandCard(
     onPrevious: () -> Unit = {},
     onToggleRepeat: () -> Unit = {},
     onOpenNowPlaying: () -> Unit = {},
+    /** Null leaves the FULL rung without a scrub row, as the Settings preview wants. */
+    onSeek: ((Float) -> Unit)? = null,
+    onSeekStarted: () -> Unit = {},
+    onSeekFinished: () -> Unit = {},
     modifier: Modifier = Modifier,
     menu: (@Composable androidx.compose.foundation.layout.BoxScope.() -> Unit)? = null,
 ) {
@@ -271,9 +289,17 @@ internal fun DynamicIslandCard(
         label = "islandHeight",
     )
     val shape = RoundedCornerShape(height / 2)
-    // The glass is a shade deeper while the pointer is on it, the way a lifted surface reads.
-    val topGlass = if (hovered) Color(0xFF1B1B20) else Color(0xFF15151A)
+    // The glass is a shade deeper while the pointer is on it, the way a lifted surface reads, and
+    // it carries a wash of the cover's own colour so the capsule belongs to the song rather than
+    // sitting on top of it. 96 px is the thumbnail the cover already decodes, so the tint costs no
+    // extra download.
+    val palette = rememberDesktopArtworkPaletteOrNull(song?.thumbnailUrl.artworkAt(ISLAND_COVER_PX))
+    val baseGlass = if (hovered) Color(0xFF1B1B20) else Color(0xFF15151A)
+    val topGlass = palette
+        ?.let { it.primary.copy(alpha = ISLAND_TINT_ALPHA).compositeOver(baseGlass) }
+        ?: baseGlass
     val bottomGlass = Color(0xFF08080B)
+    val seekRowShown = interactive && onSeek != null && layout == IslandLayout.FULL
 
     Box(
         modifier
@@ -319,6 +345,7 @@ internal fun DynamicIslandCard(
                     song = song,
                     now = now,
                     positionMs = positionMs,
+                    durationMs = durationMs,
                     isPlaying = isPlaying,
                     repeatMode = repeatMode,
                     scale = scale,
@@ -326,6 +353,9 @@ internal fun DynamicIslandCard(
                     interactive = interactive,
                     showCover = showCover,
                     showControls = showControls,
+                    seek = onSeek,
+                    onSeekStarted = onSeekStarted,
+                    onSeekFinished = onSeekFinished,
                     onPlayPause = onPlayPause,
                     onNext = onNext,
                     onPrevious = onPrevious,
@@ -350,7 +380,9 @@ internal fun DynamicIslandCard(
             }
         }
 
-        if (showProgress) {
+        // FULL carries its own scrub bar, so the hairline would be a second, smaller progress
+        // reading under the first.
+        if (showProgress && !seekRowShown) {
             IslandProgress(
                 progress = progress,
                 modifier = Modifier
@@ -371,6 +403,7 @@ private fun FullIsland(
     song: Song?,
     now: IslandLines,
     positionMs: () -> Long,
+    durationMs: () -> Long,
     isPlaying: Boolean,
     repeatMode: DesktopRepeatMode,
     scale: Float,
@@ -378,160 +411,301 @@ private fun FullIsland(
     interactive: Boolean,
     showCover: Boolean,
     showControls: Boolean,
+    seek: ((Float) -> Unit)?,
+    onSeekStarted: () -> Unit,
+    onSeekFinished: () -> Unit,
     onPlayPause: () -> Unit,
     onNext: () -> Unit,
     onPrevious: () -> Unit,
     onToggleRepeat: () -> Unit,
 ) {
-    Row(
-        Modifier
-            .fillMaxSize()
-            .padding(horizontal = 14.dp, vertical = 9.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Column(
+    val showSeek = interactive && seek != null
+    Column(Modifier.fillMaxSize()) {
+        Row(
             Modifier
-                .width(if (showCover) 236.dp * scale else 210.dp * scale)
-                .padding(end = 12.dp),
-            verticalArrangement = Arrangement.SpaceBetween,
+                .weight(1f)
+                .fillMaxWidth()
+                .padding(
+                    start = 14.dp,
+                    end = 14.dp,
+                    top = 9.dp,
+                    bottom = if (showSeek) 1.dp else 9.dp,
+                ),
+            verticalAlignment = Alignment.CenterVertically,
         ) {
-            Row(
-                Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(10.dp),
+            Column(
+                Modifier
+                    .width(if (showCover) 236.dp * scale else 210.dp * scale)
+                    .padding(end = 12.dp),
+                verticalArrangement = Arrangement.SpaceBetween,
             ) {
-                if (showCover) {
-                    DesktopArtwork(
-                        url = song?.thumbnailUrl,
-                        modifier = Modifier
-                            .size(38.dp * scale)
-                            .clip(RoundedCornerShape(8.dp))
-                            .background(Color(0xFF222226)),
-                        contentDescription = "Cover",
-                        // A 38 dp thumbnail does not need a 544 px decode: the island asks for the
-                        // size it draws, so the cache holds a few kilobytes instead of a megabyte.
-                        px = ISLAND_COVER_PX,
-                    )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(10.dp),
+                ) {
+                    if (showCover) {
+                        DesktopArtwork(
+                            url = song?.thumbnailUrl,
+                            modifier = Modifier
+                                .size(38.dp * scale)
+                                .clip(RoundedCornerShape(8.dp))
+                                .background(Color(0xFF222226)),
+                            contentDescription = "Cover",
+                            // A 38 dp thumbnail does not need a 544 px decode: the island asks for the
+                            // size it draws, so the cache holds a few kilobytes instead of a megabyte.
+                            px = ISLAND_COVER_PX,
+                        )
+                    }
+
+                    Column(Modifier.weight(1f)) {
+                        Text(
+                            text = song?.title ?: DesktopStrings["d_island_nothing_playing", "Nothing playing"],
+                            color = Color.White,
+                            fontSize = 13.sp * scale,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                        Spacer(Modifier.height(1.dp))
+                        Text(
+                            text = song?.artist ?: "BitChord",
+                            color = Color.White.copy(alpha = 0.62f),
+                            fontSize = 11.sp * scale,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis,
+                        )
+                    }
                 }
 
-                Column(Modifier.weight(1f)) {
-                    Text(
-                        text = song?.title ?: DesktopStrings["d_island_nothing_playing", "Nothing playing"],
-                        color = Color.White,
-                        fontSize = 12.5.sp * scale,
-                        fontWeight = FontWeight.Bold,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    Spacer(Modifier.height(1.dp))
-                    Text(
-                        text = song?.artist ?: "BitChord",
-                        color = Color.White.copy(alpha = 0.62f),
-                        fontSize = 10.5.sp * scale,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    if (showControls) {
+                        IslandControlButton(
+                            icon = Icons.Rounded.FastRewind,
+                            tooltip = "Previous",
+                            size = 27.dp * scale,
+                            iconSize = 15.dp * scale,
+                            enabled = interactive,
+                            onClick = onPrevious,
+                        )
+                        IslandControlButton(
+                            icon = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
+                            tooltip = if (isPlaying) "Pause" else "Play",
+                            size = 33.dp * scale,
+                            iconSize = 20.dp * scale,
+                            isPrimary = true,
+                            enabled = interactive,
+                            onClick = onPlayPause,
+                        )
+                        IslandControlButton(
+                            icon = Icons.Rounded.FastForward,
+                            tooltip = "Next",
+                            size = 27.dp * scale,
+                            iconSize = 15.dp * scale,
+                            enabled = interactive,
+                            onClick = onNext,
+                        )
+                        val repeatOn = repeatMode != DesktopRepeatMode.OFF
+                        IslandControlButton(
+                            icon = BitChordIcons.Repeat,
+                            tooltip = "Repeat: ${repeatMode.label()}",
+                            size = 27.dp * scale,
+                            iconSize = 15.dp * scale,
+                            tint = if (repeatOn) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.62f),
+                            badgeText = if (repeatMode == DesktopRepeatMode.ONE) "1" else null,
+                            enabled = interactive,
+                            onClick = onToggleRepeat,
+                        )
+                    } else {
+                        // The clock reads the playhead through a derived state, so the text is rewritten
+                        // when the second changes rather than on all four ticks inside it.
+                        val clock by remember {
+                            derivedStateOf { formatIslandTime(positionMs()) }
+                        }
+                        Text(
+                            text = clock,
+                            color = Color.White.copy(alpha = 0.55f),
+                            fontSize = 10.sp * scale,
+                            fontWeight = FontWeight.Medium,
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
 
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalAlignment = Alignment.CenterVertically,
+            Box(
+                Modifier
+                    .width(1.dp)
+                    .height(56.dp * scale)
+                    .background(Color.White.copy(alpha = 0.12f)),
+            )
+
+            Column(
+                Modifier
+                    .weight(1f)
+                    .padding(start = 14.dp, end = if (hovered) 74.dp else 6.dp),
             ) {
-                if (showControls) {
-                    IslandControlButton(
-                        icon = Icons.Rounded.FastRewind,
-                        tooltip = "Previous",
-                        size = 27.dp * scale,
-                        iconSize = 15.dp * scale,
-                        enabled = interactive,
-                        onClick = onPrevious,
-                    )
-                    IslandControlButton(
-                        icon = if (isPlaying) Icons.Rounded.Pause else Icons.Rounded.PlayArrow,
-                        tooltip = if (isPlaying) "Pause" else "Play",
-                        size = 33.dp * scale,
-                        iconSize = 20.dp * scale,
-                        isPrimary = true,
-                        enabled = interactive,
-                        onClick = onPlayPause,
-                    )
-                    IslandControlButton(
-                        icon = Icons.Rounded.FastForward,
-                        tooltip = "Next",
-                        size = 27.dp * scale,
-                        iconSize = 15.dp * scale,
-                        enabled = interactive,
-                        onClick = onNext,
-                    )
-                    val repeatOn = repeatMode != DesktopRepeatMode.OFF
-                    IslandControlButton(
-                        icon = BitChordIcons.Repeat,
-                        tooltip = "Repeat: ${repeatMode.label()}",
-                        size = 27.dp * scale,
-                        iconSize = 15.dp * scale,
-                        tint = if (repeatOn) Color(0xFFFFD54F) else Color.White.copy(alpha = 0.62f),
-                        badgeText = if (repeatMode == DesktopRepeatMode.ONE) "1" else null,
-                        enabled = interactive,
-                        onClick = onToggleRepeat,
-                    )
-                } else {
-                    // The clock reads the playhead through a derived state, so the text is rewritten
-                    // when the second changes rather than on all four ticks inside it.
-                    val clock by remember {
-                        derivedStateOf { formatIslandTime(positionMs()) }
+                // The whole three-line block rolls up by one line when the song moves on, the way the
+                // player's own lyric sheet does: the line being sung turns white where it stands, and
+                // nothing sweeps across it. Sliding a third of the block is one line's worth.
+                AnimatedContent(
+                    targetState = now.activeIndex,
+                    transitionSpec = {
+                        (slideInVertically(animationSpec = tween(ACTIVE_LINE_ROLL_MS)) { it / 3 } + fadeIn(tween(ACTIVE_LINE_ROLL_MS)))
+                            .togetherWith(
+                                slideOutVertically(animationSpec = tween(ACTIVE_LINE_ROLL_MS)) { -it / 3 } +
+                                    fadeOut(tween(ACTIVE_LINE_ROLL_MS)),
+                            )
+                    },
+                    modifier = Modifier.fillMaxSize(),
+                    label = "islandLines",
+                ) { index ->
+                    val at = now.at(index)
+                    Column(
+                        Modifier.fillMaxSize(),
+                        verticalArrangement = Arrangement.SpaceEvenly,
+                    ) {
+                        IslandLine(text = at.previous, fontSize = 11.sp * scale, active = false)
+                        IslandLine(text = at.current, fontSize = 15.sp * scale, active = true)
+                        IslandLine(text = at.next, fontSize = 11.sp * scale, active = false)
                     }
-                    Text(
-                        text = clock,
-                        color = Color.White.copy(alpha = 0.55f),
-                        fontSize = 10.sp * scale,
-                        fontWeight = FontWeight.Medium,
-                        maxLines = 1,
-                    )
                 }
             }
         }
 
-        Box(
-            Modifier
-                .width(1.dp)
-                .height(64.dp * scale)
-                .background(Color.White.copy(alpha = 0.12f)),
-        )
+        if (showSeek && seek != null) {
+            IslandSeekRow(
+                positionMs = positionMs,
+                durationMs = durationMs,
+                scale = scale,
+                onSeek = seek,
+                onSeekStarted = onSeekStarted,
+                onSeekFinished = onSeekFinished,
+            )
+        }
+    }
+}
 
-        Column(
-            Modifier
-                .weight(1f)
-                .padding(start = 14.dp, end = if (hovered) 74.dp else 6.dp),
-        ) {
-            // The whole three-line block rolls up by one line when the song moves on, the way the
-            // player's own lyric sheet does: the line being sung turns white where it stands, and
-            // nothing sweeps across it. Sliding a third of the block is one line's worth.
-            AnimatedContent(
-                targetState = now.activeIndex,
-                transitionSpec = {
-                    (slideInVertically(animationSpec = tween(ACTIVE_LINE_ROLL_MS)) { it / 3 } + fadeIn(tween(ACTIVE_LINE_ROLL_MS)))
-                        .togetherWith(
-                            slideOutVertically(animationSpec = tween(ACTIVE_LINE_ROLL_MS)) { -it / 3 } +
-                                fadeOut(tween(ACTIVE_LINE_ROLL_MS)),
-                        )
-                },
-                modifier = Modifier.fillMaxSize(),
-                label = "islandLines",
-            ) { index ->
-                val at = now.at(index)
-                Column(
-                    Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.SpaceEvenly,
-                ) {
-                    IslandLine(text = at.previous, fontSize = 11.sp * scale, active = false)
-                    IslandLine(text = at.current, fontSize = 14.sp * scale, active = true)
-                    IslandLine(text = at.next, fontSize = 11.sp * scale, active = false)
-                }
+/**
+ * The scrub row under the FULL capsule: what has been played, a bar, what is left.
+ *
+ * The bar only reports on release. While the pointer is down it previews the position locally, so
+ * the lyrics keep reading from where the song actually is until the listener has chosen; asking
+ * the engine to jump on every pixel of a drag would be dozens of decoder seeks per gesture.
+ */
+@Composable
+private fun IslandSeekRow(
+    positionMs: () -> Long,
+    durationMs: () -> Long,
+    scale: Float,
+    onSeek: (Float) -> Unit,
+    onSeekStarted: () -> Unit,
+    onSeekFinished: () -> Unit,
+) {
+    var preview by remember { mutableStateOf<Float?>(null) }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(start = 18.dp, end = 18.dp, bottom = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.spacedBy(9.dp),
+    ) {
+        IslandSeekTime(
+            positionMs = positionMs,
+            durationMs = durationMs,
+            preview = preview,
+            scale = scale,
+            leading = true,
+        )
+        IslandSeekBar(
+            positionMs = positionMs,
+            durationMs = durationMs,
+            preview = preview,
+            onPreview = { preview = it },
+            onSeekStarted = onSeekStarted,
+            onSeekFinished = {
+                val target = preview
+                if (target != null) onSeek(target)
+                preview = null
+                onSeekFinished()
+            },
+            modifier = Modifier.weight(1f),
+        )
+        IslandSeekTime(
+            positionMs = positionMs,
+            durationMs = durationMs,
+            preview = preview,
+            scale = scale,
+            leading = false,
+        )
+    }
+}
+
+@Composable
+private fun IslandSeekBar(
+    positionMs: () -> Long,
+    durationMs: () -> Long,
+    preview: Float?,
+    onPreview: (Float) -> Unit,
+    onSeekStarted: () -> Unit,
+    onSeekFinished: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    // Read through a derived state so the four playhead ticks a second recompose the bar, not the
+    // capsule around it.
+    val live by remember {
+        derivedStateOf {
+            val duration = durationMs()
+            if (duration > 0L) (positionMs().toFloat() / duration).coerceIn(0f, 1f) else 0f
+        }
+    }
+    DesktopThinSlider(
+        value = preview ?: live,
+        onValueChange = onPreview,
+        modifier = modifier,
+        onValueChangeStarted = onSeekStarted,
+        onValueChangeFinished = onSeekFinished,
+        idleHeight = 3.dp,
+        activeHeight = 5.dp,
+        activeColor = Color.White.copy(alpha = 0.92f),
+        inactiveColor = Color.White.copy(alpha = 0.20f),
+    )
+}
+
+/** Elapsed time on the left of the seek row, time left on the right. */
+@Composable
+private fun IslandSeekTime(
+    positionMs: () -> Long,
+    durationMs: () -> Long,
+    preview: Float?,
+    scale: Float,
+    leading: Boolean,
+) {
+    val text by remember(preview) {
+        derivedStateOf {
+            val duration = durationMs()
+            val position = when {
+                preview != null && duration > 0L -> (preview * duration).toLong()
+                else -> positionMs()
+            }
+            if (leading) {
+                formatIslandTime(position)
+            } else {
+                "-" + formatIslandTime((duration - position).coerceAtLeast(0L))
             }
         }
     }
+    Text(
+        text = text,
+        color = Color.White.copy(alpha = 0.52f),
+        fontSize = 9.5.sp * scale,
+        fontWeight = FontWeight.Medium,
+        maxLines = 1,
+    )
 }
 
 @Composable
@@ -749,7 +923,6 @@ internal fun DynamicIslandMenu(
     onDismissRequest: () -> Unit,
 ) {
     val enabled by DesktopDynamicIslandSettings.enabled.collectAsState()
-    val inTopBar by DesktopDynamicIslandSettings.inTopBar.collectAsState()
     val layout by DesktopDynamicIslandSettings.layout.collectAsState()
     val locked by DesktopDynamicIslandSettings.locked.collectAsState()
     val clickThrough by DesktopDynamicIslandSettings.clickThrough.collectAsState()
@@ -812,9 +985,6 @@ internal fun DynamicIslandMenu(
         MenuCheck(DesktopStrings["d_island_floating", "Floating island"], enabled) {
             DesktopDynamicIslandSettings.setEnabled(it)
         }
-        MenuCheck(DesktopStrings["d_island_top_bar", "Island in the top bar"], inTopBar) {
-            DesktopDynamicIslandSettings.setInTopBar(it)
-        }
 
         HorizontalDivider(color = Color.White.copy(alpha = 0.08f))
 
@@ -866,14 +1036,14 @@ internal fun DynamicIslandMenu(
 @Composable
 internal fun DesktopIslandToolbarButton() {
     var open by remember { mutableStateOf(false) }
-    val anyVisible by DesktopDynamicIslandSettings.anyVisible.collectAsState()
+    val enabled by DesktopDynamicIslandSettings.enabled.collectAsState()
 
     Box {
         DesktopToolbarButton(onClick = { open = true }, size = 32.dp) {
             Icon(
                 BitChordIcons.MusicNote,
                 "Dynamic Island",
-                tint = if (anyVisible) Color.White else DesktopSecondary,
+                tint = if (enabled) Color.White else DesktopSecondary,
                 modifier = Modifier.size(19.dp),
             )
         }
@@ -899,10 +1069,10 @@ private fun MenuHeader(text: String) {
 @Composable
 private fun MenuCaption(text: String) {
     Text(
-        text = text.uppercase(),
+        text = text,
         color = DesktopSecondary.copy(alpha = 0.75f),
-        fontSize = 9.5.sp,
-        fontWeight = FontWeight.SemiBold,
+        fontSize = 10.sp,
+        fontWeight = FontWeight.Medium,
         modifier = Modifier.padding(start = 16.dp, top = 8.dp, bottom = 2.dp),
     )
 }
@@ -944,200 +1114,6 @@ private fun MenuCheck(label: String, checked: Boolean, onCheckedChange: (Boolean
  * the main window leaves the island on screen. What stays here is everything the capsule is made
  * of: the card, its three layouts, its menu and its badges.
  */
-
-/* ------------------------------------------------------------------------------------------------
- * The top bar's island
- * --------------------------------------------------------------------------------------------- */
-
-/**
- * The slim island that shares the toolbar with the transport controls.
- *
- * It is the same three-line readout as the capsule, in a pill low enough to sit between the
- * window's own buttons, and it disappears from the bar when it is switched off in its menu.
- */
-@Composable
-internal fun DesktopTopBarDynamicIsland(
-    song: Song?,
-    currentProgress: () -> Float,
-    onOpenNowPlaying: () -> Unit,
-    modifier: Modifier = Modifier,
-) {
-    val inTopBar by DesktopDynamicIslandSettings.inTopBar.collectAsState()
-    if (!inTopBar) return
-
-    val lines by DesktopFloatingLyricsManager.lyricsLines.collectAsState()
-
-    var menuOpen by remember { mutableStateOf(false) }
-    val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
-    // The menu counts as hover, so the buttons it was opened from do not vanish underneath it.
-    val hovered = isHovered || menuOpen
-
-    // Same split as the capsule: the line changes rarely and recomposes, the playhead does not.
-    val activeIndex by remember(lines, song) {
-        derivedStateOf { activeLyricIndex(lines.orEmpty(), DesktopFloatingLyricsManager.currentPositionMs.value) }
-    }
-    val now = remember(lines, song, activeIndex) { islandLines(lines, song, activeIndex) }
-    val pillShape = RoundedCornerShape(25.dp)
-
-    Box(modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
-        Surface(
-            modifier = Modifier
-                // A pill with nothing in it is a short chip, not a bar: stretch only when it has
-                // lyrics three lines deep to lay out.
-                .then(
-                    if (song == null) {
-                        Modifier.widthIn(min = 220.dp, max = 300.dp)
-                    } else {
-                        Modifier.widthIn(max = 660.dp).fillMaxWidth()
-                    },
-                )
-                .height(48.dp)
-                .clip(pillShape)
-                .hoverable(interactionSource)
-                .islandContextMenu { menuOpen = true }
-                .clickable(onClick = onOpenNowPlaying),
-            shape = pillShape,
-            color = Color.Transparent,
-            tonalElevation = 0.dp,
-        ) {
-            Box(
-                Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.horizontalGradient(
-                            listOf(
-                                Color(0xF715151A),
-                                Color(0xFA0B0B0E),
-                                Color(0xF715151A),
-                            ),
-                        ),
-                    )
-                    .border(
-                        width = 1.dp,
-                        color = Color.White.copy(alpha = if (hovered) 0.24f else 0.12f),
-                        shape = pillShape,
-                    ),
-            ) {
-                if (song == null) {
-                    Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Row(
-                            verticalAlignment = Alignment.CenterVertically,
-                            horizontalArrangement = Arrangement.spacedBy(8.dp),
-                        ) {
-                            Icon(
-                                BitChordIcons.MusicNote,
-                                DesktopStrings["playback_channel_name", "Now playing"],
-                                tint = DesktopSecondary.copy(alpha = 0.65f),
-                                modifier = Modifier.size(18.dp),
-                            )
-                            Text(
-                                text = DesktopStrings["d_island_ready", "Dynamic Island · ready"],
-                                color = DesktopSecondary.copy(alpha = 0.75f),
-                                fontSize = 10.5.sp,
-                            )
-                        }
-                    }
-                } else {
-                    Row(
-                        Modifier
-                            .fillMaxSize()
-                            .padding(start = 8.dp, end = if (hovered) 6.dp else 10.dp, top = 4.dp, bottom = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        DesktopArtwork(
-                            url = song.thumbnailUrl,
-                            modifier = Modifier
-                                .size(34.dp)
-                                .clip(RoundedCornerShape(7.dp))
-                                .background(Color(0xFF222226)),
-                            contentDescription = "Cover",
-                            px = ISLAND_COVER_PX,
-                        )
-                        Spacer(Modifier.width(9.dp))
-
-                        Column(Modifier.widthIn(min = 100.dp, max = 190.dp)) {
-                            Text(
-                                text = song.title,
-                                color = Color.White,
-                                fontSize = 11.5.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                            Text(
-                                text = song.artist,
-                                color = Color.White.copy(alpha = 0.62f),
-                                fontSize = 9.6.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                            )
-                        }
-
-                        Box(
-                            Modifier
-                                .padding(horizontal = 9.dp)
-                                .width(1.dp)
-                                .height(26.dp)
-                                .background(Color.White.copy(alpha = 0.12f)),
-                        )
-
-                        Column(
-                            Modifier
-                                .weight(1f)
-                                .padding(end = 4.dp),
-                            verticalArrangement = Arrangement.Center,
-                        ) {
-                            AnimatedContent(
-                                targetState = now.activeIndex,
-                                transitionSpec = {
-                                    (slideInVertically(animationSpec = tween(280)) { it / 3 } + fadeIn(tween(280)))
-                                        .togetherWith(
-                                            slideOutVertically(animationSpec = tween(280)) { -it / 3 } +
-                                                fadeOut(tween(280)),
-                                        )
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                label = "topBarLines",
-                            ) { index ->
-                                val at = now.at(index)
-                                Column(verticalArrangement = Arrangement.SpaceEvenly) {
-                                    IslandLine(text = at.previous, fontSize = 9.sp, active = false)
-                                    IslandLine(text = at.current, fontSize = 11.5.sp, active = true)
-                                    IslandLine(text = at.next, fontSize = 9.sp, active = false)
-                                }
-                            }
-                        }
-
-                        if (hovered) {
-                            IslandBadge(
-                                icon = Icons.Rounded.MoreHoriz,
-                                tooltip = "Island menu",
-                                onClick = { menuOpen = true },
-                            )
-                        }
-                    }
-
-                    Box(
-                        Modifier
-                            .align(Alignment.BottomCenter)
-                            .fillMaxWidth()
-                            .height(2.dp)
-                            .drawBehind {
-                                val base = currentProgress().coerceIn(0f, 1f)
-                                drawRect(
-                                    color = Color.White.copy(alpha = 0.55f),
-                                    size = Size(size.width * base, size.height),
-                                )
-                            },
-                    )
-                }
-            }
-        }
-
-        DynamicIslandMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false })
-    }
-}
 
 /* ------------------------------------------------------------------------------------------------
  * Small parts
@@ -1271,6 +1247,9 @@ private const val ACTIVE_LINE_ROLL_MS = 320
  * the size of a fingernail.
  */
 private const val ISLAND_COVER_PX = 96
+
+/** How much of the cover's colour is washed into the capsule's glass. */
+private const val ISLAND_TINT_ALPHA = 0.22f
 
 private fun formatIslandTime(ms: Long): String {
     val totalSeconds = (ms / 1_000L).coerceAtLeast(0L)

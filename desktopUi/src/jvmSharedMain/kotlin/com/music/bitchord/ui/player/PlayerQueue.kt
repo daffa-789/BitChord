@@ -67,6 +67,7 @@ import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.IntOffset
@@ -75,6 +76,7 @@ import androidx.compose.ui.unit.Velocity
 import coil3.compose.AsyncImage
 import com.music.bitchord.ui.components.thumbnailBorder
 import com.music.bitchord.ui.icons.BitChordIcons
+import com.music.bitchord.ui.theme.BcColors
 import com.music.bitchord.data.model.QueueTier
 import com.music.bitchord.data.model.Song
 import com.music.bitchord.playback.autoplaySectionStart
@@ -799,7 +801,7 @@ private fun InlineQueueRow(
             model = rememberRemoteArtworkUrl(song),
             contentDescription = null,
             modifier = Modifier
-                .size(44.dp)
+                .size(40.dp)
                 .clip(RoundedCornerShape(6.dp))
                 .thumbnailBorder(RoundedCornerShape(6.dp))
                 .background(Color.White.copy(alpha = 0.08f)),
@@ -820,12 +822,23 @@ private fun InlineQueueRow(
             )
         }
         if (isCurrent) {
-            Icon(
-                Icons.Rounded.GraphicEq,
-                contentDescription = stringResource(Res.string.now_playing),
-                tint = Color.White,
-                modifier = Modifier.size(18.dp),
-            )
+            // A coral dot rather than an equalizer glyph: the row's words
+            // already say which track is playing, and the dot is quieter than
+            // an animated icon sitting beside them.
+            val nowPlaying = stringResource(Res.string.now_playing)
+            Box(
+                modifier = Modifier
+                    .size(18.dp)
+                    .semantics { contentDescription = nowPlaying },
+                contentAlignment = Alignment.Center,
+            ) {
+                Box(
+                    Modifier
+                        .size(6.dp)
+                        .clip(CircleShape)
+                        .background(BcColors.Live),
+                )
+            }
             Spacer(Modifier.width(10.dp))
         }
         if (!locked) {

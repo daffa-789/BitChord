@@ -79,19 +79,14 @@ internal object DesktopDynamicIslandSettings {
 
     private val persistence = DesktopPersistence()
 
-    /** Whether the floating capsule is drawn over the page. */
-    val enabled: MutableStateFlow<Boolean> = MutableStateFlow(persistence.boolean(KEY_ENABLED, true))
-
     /**
-     * Whether the slim island sits in the top bar beside the transport controls.
+     * Whether the floating capsule is drawn over the page.
      *
-     * Unset, it goes the other way from the floating capsule: a fresh profile gets the floating
-     * island alone, because two capsules stacked one above the other read as a bug rather than as a
-     * feature — and somebody who has already closed the floating one gets the top bar's instead of
-     * nothing at all. Either can be switched from the island's own menu, and both are remembered.
+     * The top-bar island is gone, so a profile that had only that one switched on has its old
+     * preference carried over to the capsule rather than ending up with no island at all.
      */
-    val inTopBar: MutableStateFlow<Boolean> = MutableStateFlow(
-        persistence.boolean(KEY_TOP_BAR, !persistence.boolean(KEY_ENABLED, true)),
+    val enabled: MutableStateFlow<Boolean> = MutableStateFlow(
+        persistence.boolean(KEY_ENABLED, true) || persistence.boolean(KEY_LEGACY_TOP_BAR, false),
     )
 
     val layout: MutableStateFlow<IslandLayout> =
@@ -105,7 +100,7 @@ internal object DesktopDynamicIslandSettings {
     val showProgress: MutableStateFlow<Boolean> = MutableStateFlow(persistence.boolean(KEY_PROGRESS, true))
 
     /** Shrinks to the Mini pill while the pointer is away, and grows back when it returns. */
-    val autoCollapse: MutableStateFlow<Boolean> = MutableStateFlow(persistence.boolean(KEY_AUTO_COLLAPSE, false))
+    val autoCollapse: MutableStateFlow<Boolean> = MutableStateFlow(persistence.boolean(KEY_AUTO_COLLAPSE, true))
 
     /** Stays out of the way while playback is paused. */
     val hideWhenPaused: MutableStateFlow<Boolean> =
@@ -134,29 +129,11 @@ internal object DesktopDynamicIslandSettings {
     val offsetX: MutableStateFlow<Float> = MutableStateFlow(persistence.float(KEY_OFFSET_X, 0f))
     val offsetY: MutableStateFlow<Float> = MutableStateFlow(persistence.float(KEY_OFFSET_Y, 0f))
 
-    /** True while either island is on, which is what the toolbar button reads. */
-    val anyVisible: StateFlow<Boolean>
-        get() = _anyVisible
-
-    private val _anyVisible = MutableStateFlow(enabled.value || inTopBar.value)
-
-    /** Kept in step by every setter below rather than by a coroutine nobody owns. */
-    private fun refreshVisible() {
-        _anyVisible.value = enabled.value || inTopBar.value
-    }
-
     fun toggle() = setEnabled(!enabled.value)
 
     fun setEnabled(value: Boolean) {
         persistence.saveBoolean(KEY_ENABLED, value)
         enabled.value = value
-        refreshVisible()
-    }
-
-    fun setInTopBar(value: Boolean) {
-        persistence.saveBoolean(KEY_TOP_BAR, value)
-        inTopBar.value = value
-        refreshVisible()
     }
 
     fun setLayout(value: IslandLayout) {
@@ -222,7 +199,9 @@ internal object DesktopDynamicIslandSettings {
     }
 
     private const val KEY_ENABLED = "floating_lyrics_enabled"
-    private const val KEY_TOP_BAR = "island_top_bar"
+
+    /** Written by the old top-bar capsule. Read once, as a migration, never written again. */
+    private const val KEY_LEGACY_TOP_BAR = "island_top_bar"
     private const val KEY_LAYOUT = "island_layout"
     private const val KEY_ANCHOR = "island_anchor"
     private const val KEY_COVER = "island_cover"
