@@ -30,6 +30,30 @@ jobs:
       - name: Run desktop tests
         run: .\gradlew.bat :desktopApp:test
 
+      # The shared layer is what the phone, the desktop and the iOS framework all compile against, and
+      # its own suite never ran here before — so a purge on one side could go unnoticed.
+      - name: Run shared tests
+        run: .\gradlew.bat :shared:jvmTest
+
+  desktop-macos:
+    name: Desktop Build (macOS target)
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: '21'
+          distribution: 'temurin'
+
+      - uses: gradle/actions/setup-gradle@v4
+
+      # The DMG is only packaged in Release, which no tag has triggered yet; compiling on the Mac image
+      # is what keeps the macOS branches from drifting out of build between releases.
+      - name: Compile Kotlin Desktop for macOS
+        run: ./gradlew :desktopApp:compileKotlin
+
   desktop-linux:
     name: Desktop Build (Linux target)
     runs-on: ubuntu-latest

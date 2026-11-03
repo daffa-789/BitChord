@@ -303,6 +303,9 @@ jobs:
     needs: meta
     runs-on: ubuntu-latest
     timeout-minutes: 60
+    outputs:
+      # Read by the release notes, so the page cannot claim a signed APK when the keystore was absent.
+      signed: ${{ steps.keystore.outputs.signed }}
     steps:
       - uses: actions/checkout@v4
         with:
@@ -317,6 +320,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
 
       - name: Setup Keystore if secret present
+        id: keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
           KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
@@ -332,8 +336,10 @@ jobs:
               echo "keyPassword=$KEY_PASSWORD"
             } > keystore.properties
             echo "Keystore configured for release signing."
+            echo "signed=true" >> "$GITHUB_OUTPUT"
           else
             echo "No KEYSTORE_BASE64 secret provided — building unsigned release APK."
+            echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Assemble Release APK
@@ -346,7 +352,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p dist
-          find app/build/outputs/apk -type f -name "*.apk" -exec cp {} dist/ \;
+          # Only the prod flavour ships: the dev one is applicationId com.dev.bitchord, built to sit
+          # beside an installed app for side-by-side testing, not to be installed by strangers.
+          find app/build/outputs/apk -type f -name "*.apk" \
+            ! -path "*/dev/*" ! -name "app-dev-*" -exec cp {} dist/ \;
+          if ! ls dist/*.apk >/dev/null 2>&1; then
+            echo "::error::no prod APK was produced - check the flavour and split names in app/build.gradle.kts."
+            exit 1
+          fi
           ls -l dist
 
       - name: Hash Android APKs
@@ -447,6 +460,7 @@ jobs:
           VERSION: ${{ needs.meta.outputs.version }}
           COMMIT: ${{ needs.meta.outputs.sha }}
           PRERELEASE: ${{ needs.meta.outputs.prerelease }}
+          APK_SIGNED: ${{ needs.android.outputs.signed }}
         run: |
           set -euo pipefail
           cd dist
@@ -470,7 +484,13 @@ jobs:
             echo '## Which one to take'
             echo
             echo '- **Android** — `*.apk` for Android phones and tablets (ARM64, ARMv7, x86_64, or universal).'
-            echo '- **iOS** — `BitChord-*-ios-shared.xcframework.zip` containing `BitChordShared.xcframework` for iOS apps.'
+            if [ "$APK_SIGNED" != "true" ]; then
+              echo '  **These APKs are unsigned**: Android will refuse to install them. They exist so CI'
+              echo '  proves the build; add the `KEYSTORE_BASE64` secret to get an installable, signed APK.'
+            fi
+            echo '- **iOS** — `BitChord-*-ios-shared.xcframework.zip`, the compiled shared layer for a developer'
+            echo '  embedding it in their own iOS app. This release contains **no iPhone app**: the player'
+            echo '  itself ships on Android and desktop only.'
             echo '- **macOS** — `BitChord-*.dmg` for Apple Silicon (macOS 12+ / arm64).'
             echo '- **Windows** — `BitChord-*.msi` for a per-user installer (no admin needed);'
             echo '  `BitChord-*.exe` is the same installer as a single file; `*-windows-portable.zip`'
