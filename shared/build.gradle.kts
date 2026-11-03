@@ -57,6 +57,9 @@ kotlin {
                 // YouTube stream resolution: InnerTubeX's client catalog and cipher tiers, NewPipe as the fallback.
                 api("com.github.MetrolistGroup.innertubex:innertubex:${property("innertubex")}")
                 compileOnly("com.github.TeamNewPipe:NewPipeExtractor:${property("newpipe")}")
+                // Compile-only: the application supplies the runtime artifact itself — the phone pulls
+                // onnxruntime-android, and a desktop build that ever enables Automix brings its own.
+                compileOnly("com.microsoft.onnxruntime:onnxruntime:1.20.0")
             }
         }
         androidMain.get().dependsOn(jvmSharedMain)
