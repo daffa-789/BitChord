@@ -358,9 +358,11 @@ jobs:
           echo "Using NDK $ndk"
           echo "version=$ndk" >> "$GITHUB_OUTPUT"
 
-      - name: Assemble Release APK
+      # `assembleRelease` would also build the dev flavour, which the next step throws away — and a
+      # dev-only packaging failure once blocked the whole release over an APK nobody ships.
+      - name: Assemble the prod Release APKs
         run: >
-          ./gradlew :app:assembleRelease
+          ./gradlew :app:assembleProdRelease
           -Pbitchord.version=${{ needs.meta.outputs.version }}
           -Pbitchord.build=${{ needs.meta.outputs.build }}
           -Pbitchord.ndkVersion=${{ steps.ndk.outputs.version }}
