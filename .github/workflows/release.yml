@@ -4,6 +4,9 @@ name: Release
 # SHA-256 manifest. `workflow_dispatch` rebuilds a tag that already exists — after a runner hiccup, or
 # as a draft to read the notes before publishing.
 #
+# Requires the RELEASE_TOKEN secret (a fine-grained PAT with Contents: read+write on this repo): the
+# publish step cannot use GITHUB_TOKEN, because GitHub blocks the Releases API for forks.
+#
 # Version rule: the tag without its leading `v` is the app version, and its patch component doubles as
 # the desktop version code (`desktopVersionCode` in desktopApp/build.gradle.kts), so the installer's
 # numeric version matches the tag it was cut from.
@@ -545,6 +548,10 @@ jobs:
 
       - uses: softprops/action-gh-release@v3
         with:
+          # This repo is a fork, and GitHub refuses every Releases API call made with GITHUB_TOKEN
+          # from a fork — create and update both fail with 403, even with contents: write granted.
+          # Only this step needs the personal token; the builds stay on the default one.
+          token: ${{ secrets.RELEASE_TOKEN }}
           tag_name: ${{ needs.meta.outputs.tag }}
           target_commitish: ${{ needs.meta.outputs.sha }}
           name: BitChord ${{ needs.meta.outputs.version }}
