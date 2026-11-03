@@ -125,10 +125,11 @@ jobs:
           g++ --version | Select-Object -First 1
 
       - name: Package installers and the portable archive
+        shell: pwsh
         run: >
           .\gradlew.bat :desktopApp:packageMsi :desktopApp:packageExe :desktopApp:windowsPortable
-          -Pbitchord.version=${{ needs.meta.outputs.version }}
-          -Pbitchord.build=${{ needs.meta.outputs.build }}
+          '-Pbitchord.version=${{ needs.meta.outputs.version }}'
+          '-Pbitchord.build=${{ needs.meta.outputs.build }}'
 
       # "It built" is not "it ships what makes it feel native". The DLLs reach every package as
       # resources/native/* inside the app jar, so that jar is what gets read.
