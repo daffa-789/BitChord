@@ -9,7 +9,7 @@
 
 ### Aesthetic YouTube Music Client
 
-**This tree is the desktop client — Windows and Linux.** [What this fork changes](#this-fork).
+**Desktop on Windows, Linux and macOS, the Android app, and the shared iOS framework — all built from this one tree.** [What this fork changes](#this-fork).
 
 <br/>
 
@@ -99,15 +99,23 @@
 
 <h1><a id="download"></a>Download</h1>
 
-<b>BitChord Desktop — Windows and Linux</b>
+<b>What this tree ships</b>
 
-This tree is the desktop client only: the Compose Desktop app, built on the JVM. It runs on
-Windows 11 (Fluent window frame, Dynamic Island lyrics, SMTC media keys) and on Linux (MPRIS
-media controls and the StatusNotifier tray). Installers for **this** fork appear on the Releases
-page of this repository, published by the `Release` workflow whenever a `v*` tag is pushed — each
-release carries a `SHA256SUMS.txt` manifest next to the files. Prebuilt installers for the upstream
-project live in the [Releases](https://github.com/kushagrasinghx/BitChord/releases) page; building
-from source is one clone away:
+| Platform | Artefact | How it is verified |
+| --- | --- | --- |
+| Windows 11 | `.msi`, `.exe`, portable `.zip` | compiled on a `windows-latest` runner with the 314-test desktop suite; installers built and launched locally |
+| Linux | `.deb`, `.rpm` | compiled on `ubuntu-latest`. It has never been run on a real Linux desktop |
+| macOS (Apple Silicon) | `.dmg` | compiled on a `macos-14` runner. Nobody has booted the DMG on a Mac |
+| Android (phone · tablet · TV) | `*.apk` | `:app:assembleDebug` compiles here, including the NDK `bitchord_analysis` library. A release APK needs the `KEYSTORE_BASE64` secret — without it Android refuses to install the file |
+| iOS | `BitChordShared.xcframework` | assembled on `macos-14`. This is the shared library for someone's own iOS app; **there is no iPhone client in this repo** |
+
+The desktop client is the Compose-for-JVM app. It runs on Windows 11 (Fluent window frame, Dynamic
+Island lyrics, SMTC media keys) and on Linux (MPRIS media controls and the StatusNotifier tray).
+Installers for **this** fork appear on the Releases page of this repository, published by the
+`Release` workflow whenever a `v*` tag is pushed — each release carries a `SHA256SUMS.txt` manifest
+next to the files. Prebuilt APKs of the upstream project live in the
+[Releases](https://github.com/kushagrasinghx/BitChord/releases) page; building from source is one
+clone away:
 
 ```bash
 # JDK 21 (Temurin) is required and must be what JAVA_HOME points at.
@@ -121,6 +129,13 @@ from source is one clone away:
 # on Linux
 ./gradlew :desktopApp:packageDeb
 ./gradlew :desktopApp:packageRpm
+
+# on macOS
+./gradlew :desktopApp:packageDmg
+
+# Android (needs an Android SDK: local.properties sdk.dir, or ANDROID_HOME)
+./gradlew :app:assembleDebug               # the dev+prod flavours, 3 ABIs + universal
+./gradlew :shared:assembleBitChordSharedReleaseXCFramework   # the iOS framework
 ```
 
 `-Pbitchord.target=linux` picks the Linux native dependencies (FFmpeg/Skiko/JavaFX classifiers)
@@ -141,9 +156,12 @@ Artifacts from a current build on this repo, for reference:
 
 **Publishing** — a tag is the release: `git tag v1.8.30 && git push origin v1.8.30` runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the Windows MSI, Exe and
-portable zip on a Windows runner, the `.deb` and `.rpm` on a Linux runner, and publishes all of it as one
-GitHub Release with a `SHA256SUMS.txt` manifest. The tag's patch number becomes the installer version code,
-so the package the release ships is named after the tag. Check a download before you install it:
+portable zip on a Windows runner, the `.deb` and `.rpm` on a Linux runner, the `.dmg` on a macOS
+runner, the signed-or-unsigned `*.apk` files on a Linux runner with an Android SDK, and
+`BitChordShared.xcframework` for iOS — then publishes all of it as one
+GitHub Release with a `SHA256SUMS.txt` manifest. The tag's patch number becomes the installer version
+code and the APK's `versionCode`, so the packages a release ships are named after the tag. Check a
+download before you install it:
 
 ```bash
 sha256sum -c SHA256SUMS.txt          # Linux, macOS, Git Bash
@@ -169,19 +187,20 @@ plain text into the launcher everyone downloads. Scrobbling still works: Setting
 
 </div>
 
-Two decisions shape this tree: it ships on **Windows and Linux desktop only**, and it is trimmed to be
-a light player rather than everything a phone client can do.
+Two decisions shape this tree: the desktop client is trimmed to be a light player rather than
+everything a phone client can do, and whatever the phone genuinely needs stays in `:shared` so one
+tree builds both.
 
 **Out, and why**
 
 | Removed | Why |
 | --- | --- |
-| Automix / DJ transitions | `onnxruntime` (51.9 MB), two ONNX models (13.5 MB), the C++ analyser and ~2,500 lines of Kotlin, plus background inference on every track. Manual crossfade (0–12 s) and blend-on-skip stayed. |
+| Automix / DJ transitions | Out of the **desktop**: `onnxruntime` (51.9 MB), two ONNX models (13.5 MB), the C++ analyser and ~2,500 lines of Kotlin, plus background inference on every track. Manual crossfade (0–12 s) and blend-on-skip stayed. The analyser and those Kotlin types are back in `:shared` and `native/analyzer` because the phone is the one that ships them; the desktop never links `libbitchord_analysis`, so nothing moves there. |
 | GraalVM JS module host | `polyglot` + `js-language` + `truffle` + ICU ≈ 61 MB for a plugin index that has no install UI, whose upstream URL 404s and whose preference nothing in the code read. Addon servers still give FLAC/Hi-Res over plain HTTP. |
-| Listen Together / PartySync / QR invite | Needed a third-party server nobody ever filled in; the button only ever produced "Set the party server address first". |
-| Presence telemetry | A "the app is open" ping to the upstream server every ~5 minutes, with no switch in Settings. |
-| macOS code paths | Not a target of this tree: Mac frame (550 lines of JNA), traffic-light caption buttons, Dock listener, and the `macos` branches in the Gradle build. |
-| Android / iOS | Android lives upstream. iOS would mean rewriting the AWT + JNA + FFmpeg + WASAPI layer against AVFoundation and UIKit, and streaming YouTube Music outside Google's own app is not something Apple's terms allow. |
+| Listen Together / PartySync / QR invite | Out of the **desktop** UI: it needed a third-party server nobody ever filled in, and the button only ever produced "Set the party server address first". The party models are back in `:shared` because the phone client drives them, and a party still needs a server you point at yourself — upstream's `backend/` is not part of this tree. |
+| Presence telemetry | A "the app is open" ping to the upstream server every ~5 minutes, with no switch in Settings. Out on both clients — the Android application class no longer installs it either. |
+| macOS | The Mac *window* code stays out: Mac frame (550 lines of JNA), traffic-light caption buttons, Dock listener. A Mac gets standard window decorations. macOS itself is a build target — `packageDmg` runs on `macos-14`, and `check.yml` compiles the Mac branches of the Gradle build on every push. |
+| iOS | No iPhone client, and this is not a shortcut around it: the players run on AWT + JNA + FFmpeg + WASAPI, and moving them to AVFoundation and UIKit is a rewrite, while streaming YouTube Music outside Google's own app is not something Apple's terms allow. What does ship is `BitChordShared.xcframework` — the shared layer, built and assembled in CI, for a developer's own iOS app. |
 
 **In, and what it costs**
 
