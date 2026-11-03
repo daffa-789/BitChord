@@ -119,5 +119,10 @@ jobs:
 
       - uses: gradle/actions/setup-gradle@v4
 
+      # Linking one framework is not the shipped artefact: Release assembles the XCFramework (device +
+      # simulator) that actually gets zipped, so main builds that too rather than finding out at tag time.
       - name: Link iOS Simulator Framework
         run: ./gradlew :shared:linkReleaseFrameworkIosSimulatorArm64
+
+      - name: Assemble the release XCFramework
+        run: ./gradlew :shared:assembleBitChordSharedReleaseXCFramework
