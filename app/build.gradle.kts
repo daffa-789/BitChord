@@ -77,8 +77,12 @@ android {
         // Haze falls back to a translucent scrim below that.
         minSdk = 26
         targetSdk = 36
-        versionCode = rootProject.extra["bitchordVersionCode"] as Int
-        versionName = rootProject.extra["bitchordVersionName"] as String
+        // A release tag carries its version to the build the same way it does for the desktop
+        // packages; without the property a local build keeps the numbers in the root build file.
+        versionCode = providers.gradleProperty("bitchord.build").orNull?.toIntOrNull()
+            ?: rootProject.extra["bitchordVersionCode"] as Int
+        versionName = providers.gradleProperty("bitchord.version").orNull
+            ?: rootProject.extra["bitchordVersionName"] as String
 
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
 
