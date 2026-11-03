@@ -342,11 +342,27 @@ jobs:
             echo "signed=false" >> "$GITHUB_OUTPUT"
           fi
 
+      # Same reason as in Check: let AGP fetch an NDK during configuration and the release depends on
+      # a Google CDN download that has already broken once here.
+      - name: Find the preinstalled NDK
+        id: ndk
+        run: |
+          set -euo pipefail
+          sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:?no Android SDK on this runner}}"
+          ndk="$(ls "$sdk/ndk" 2>/dev/null | sort -V | tail -1)"
+          if [ -z "$ndk" ]; then
+            echo "::error::this runner image carries no NDK under $sdk/ndk"
+            exit 1
+          fi
+          echo "Using NDK $ndk"
+          echo "version=$ndk" >> "$GITHUB_OUTPUT"
+
       - name: Assemble Release APK
         run: >
           ./gradlew :app:assembleRelease
           -Pbitchord.version=${{ needs.meta.outputs.version }}
           -Pbitchord.build=${{ needs.meta.outputs.build }}
+          -Pbitchord.ndkVersion=${{ steps.ndk.outputs.version }}
 
       - name: Stage Android artefacts
         run: |

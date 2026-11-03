@@ -105,6 +105,13 @@ android {
         }
     }
 
+    // CI passes the NDK revision its runner image already carries. Left to itself AGP insists on its
+    // own default revision and downloads it mid-build — that download, not the compile, is what has
+    // been failing on GitHub Actions.
+    (findProperty("bitchord.ndkVersion") as String?)
+        ?.takeIf { it.isNotBlank() }
+        ?.let { ndkVersion = it }
+
     externalNativeBuild {
         cmake {
             path = file("src/main/cpp/CMakeLists.txt")
