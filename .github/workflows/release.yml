@@ -262,7 +262,7 @@ jobs:
 
       - name: Package .deb and .rpm
         run: >
-          ./gradlew :desktopApp:packageDeb :desktopApp:packageRpm
+          ./gradlew :desktopApp:packageDeb :desktopApp:packageRpm :desktopApp:createDistributable
           -Pbitchord.version=${{ needs.meta.outputs.version }}
           -Pbitchord.build=${{ needs.meta.outputs.build }}
 
@@ -289,12 +289,16 @@ jobs:
           set -euo pipefail
           APP_IMAGE=desktopApp/build/compose/binaries/main/app/BitChord
           if [ ! -x "$APP_IMAGE/bin/BitChord" ]; then
-            echo "no app image at $APP_IMAGE - skipping the AppImage"
+            echo "::error::no app image at $APP_IMAGE - the AppImage will be missing from this release"
             exit 0
           fi
           mkdir -p dist
           desktopApp/packaging/appimage.sh \
             "$APP_IMAGE" "dist/BitChord-${VERSION}-x86_64.AppImage" ./appimagetool
+          if [ ! -s "dist/BitChord-${VERSION}-x86_64.AppImage" ]; then
+            echo "::error::the AppImage was not produced - the release will ship without it"
+            exit 0
+          fi
           ls -l dist
 
       - name: Stage the artefacts
