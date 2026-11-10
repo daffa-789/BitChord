@@ -497,7 +497,6 @@ jobs:
             echo 'Put `SHA256SUMS.txt` in the folder holding the files you downloaded, then:'
             echo
             echo '```bash'
-            echo 'shasum -a 256 -c SHA256SUMS.txt        # macOS'
             echo 'sha256sum -c SHA256SUMS.txt              # Linux, Git Bash'
             echo '```'
             echo
