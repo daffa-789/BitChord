@@ -17,8 +17,8 @@ buildscript {
     }
 }
 
-extra["bitchordVersionCode"] = 31
-extra["bitchordVersionName"] = "1.8.31"
+extra["bitchordVersionCode"] = 32
+extra["bitchordVersionName"] = "1.8.32"
 extra["bitchordBetaSuffix"] = ""
 
 plugins {
