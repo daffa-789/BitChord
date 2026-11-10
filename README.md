@@ -9,7 +9,7 @@
 
 ### Aesthetic YouTube Music Client
 
-**Desktop on Windows, Linux and macOS, and the Android app — all built from this one tree.** [What this fork changes](#this-fork).
+**Desktop on Windows and Linux, and the Android app — all built from this one tree.** [What this fork changes](#this-fork).
 
 <br/>
 
@@ -104,8 +104,7 @@
 | Platform | Artefact | How it is verified |
 | --- | --- | --- |
 | Windows 11 | `.msi`, `.exe`, portable `.zip` | compiled on a `windows-latest` runner with the 314-test desktop suite; installers built and launched locally |
-| Linux | `.deb`, `.rpm` | compiled on `ubuntu-latest`. The `.deb` payload was opened and every one of its 29 shared libraries reads as `x86_64` ELF; the `.rpm` header declares `CPU = x86_64`, `Host OS = linux`. Neither has been launched on a real Linux desktop |
-| macOS (Apple Silicon) | `.dmg` | compiled on a `macos-15` (arm64) runner. The image was opened and **all 35 Mach-O binaries inside it — the launcher, `libjli.dylib` and every bundled `.dylib` — read as arm64**, so the bundled JRE and the native libraries agree on the architecture. Nobody has booted the DMG on a Mac. Unsigned and un-notarised: the first launch needs a right-click → **Open** |
+| Linux | `.deb`, `.rpm`, `.AppImage` | compiled on `ubuntu-latest`. The `.deb` payload was opened and every one of its 29 shared libraries reads as `x86_64` ELF; the `.rpm` header declares `CPU = x86_64`, `Host OS = linux`. The AppImage is the portable one — it runs from the file, no install. None of the three has been launched on a real Linux desktop |
 | Android (phone · tablet · TV) | `*.apk` | `:app:assembleDebug` compiles here, including the NDK `bitchord_analysis` library. The release APK is signed — its APK Signing Block carries the v2 scheme and the keystore's own certificate, SHA-256 `A40AEB935F…986C5A` |
 
 The desktop client is the Compose-for-JVM app. It runs on Windows 11 (Fluent window frame, Dynamic
@@ -128,9 +127,8 @@ clone away:
 # on Linux
 ./gradlew :desktopApp:packageDeb
 ./gradlew :desktopApp:packageRpm
-
-# on macOS
-./gradlew :desktopApp:packageDmg
+# the AppImage is the one format Gradle cannot make; the script wraps the app image
+desktopApp/packaging/appimage.sh desktopApp/build/compose/binaries/main/app/BitChord dist/BitChord.AppImage
 
 # Android (needs an Android SDK: local.properties sdk.dir, or ANDROID_HOME)
 ./gradlew :app:assembleDebug               # the dev+prod flavours, 3 ABIs + universal
@@ -150,21 +148,20 @@ What release `v1.8.32` actually published, for reference:
 | --- | --- |
 | `BitChord-1.8.32.msi` / `.exe` | 198 MB each |
 | `BitChord-1.8.32-windows-portable.zip` | 160 MB |
-| `BitChord-1.8.32.dmg` | 198 MB |
 | `bitchord_1.8.32_amd64.deb` / `bitchord-1.8.32-1.x86_64.rpm` | 189 MB each |
 | `app-prod-{arm64-v8a, armeabi-v7a, x86_64, universal}-release.apk` | 63 / 53 / 69 / 161 MB |
 
-**Publishing** — a tag is the release: `git tag v1.8.32 && git push origin v1.8.32` runs
+**Publishing** — a tag is the release: `git tag v1.8.33 && git push origin v1.8.33` runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the Windows MSI, Exe and
-portable zip on a Windows runner, the `.deb` and `.rpm` on a Linux runner, the `.dmg` on a macOS
-runner, and the signed-or-unsigned `*.apk` files on a Linux runner with an Android SDK — then
+portable zip on a Windows runner, the `.deb` and `.rpm` on a Linux runner, and the signed `*.apk`
+files on a Linux runner with an Android SDK — then
 publishes all of it as one
 GitHub Release with a `SHA256SUMS.txt` manifest. The tag's patch number becomes the installer version
 code and the APK's `versionCode`, so the packages a release ships are named after the tag. Check a
 download before you install it:
 
 ```bash
-sha256sum -c SHA256SUMS.txt          # Linux, macOS, Git Bash
+sha256sum -c SHA256SUMS.txt          # Linux, Git Bash
 ```
 
 ```powershell
@@ -209,7 +206,7 @@ tree builds both.
 | GraalVM JS module host | `polyglot` + `js-language` + `truffle` + ICU ≈ 61 MB for a plugin index that has no install UI, whose upstream URL 404s and whose preference nothing in the code read. Addon servers still give FLAC/Hi-Res over plain HTTP. |
 | Listen Together / PartySync / QR invite | Out of the **desktop** UI: it needed a third-party server nobody ever filled in, and the button only ever produced "Set the party server address first". The party models are back in `:shared` because the phone client drives them, and a party still needs a server you point at yourself — upstream's `backend/` is not part of this tree. |
 | Presence telemetry | A "the app is open" ping to the upstream server every ~5 minutes, with no switch in Settings. Out on both clients — the Android application class no longer installs it either. |
-| macOS | The Mac *window* code stays out: Mac frame (550 lines of JNA), traffic-light caption buttons, Dock listener. A Mac gets standard window decorations. macOS itself is a build target — `packageDmg` runs on `macos-15` (Apple Silicon), and `check.yml` compiles the Mac branches of the Gradle build on every push. |
+| macOS | Out entirely, and the reason cannot be bought around: an unsigned `.dmg` is stopped by Gatekeeper on first launch — *"BitChord is damaged and cannot be opened"* — and the only way past that is notarisation, which needs a paid Apple Developer account. A build nobody can open on the first try is not a release. The Mac *window* code was already out of this tree (Mac frame, traffic-light caption buttons, Dock listener), so what remained to remove was the packaging itself: `packageDmg`, the `macos-15` runner job, and the Apple-side native classifiers. |
 | iOS | Cut entirely: no Apple targets in `:shared`, no iOS job in CI, no framework in the release. There was never an iPhone client here — the players run on AWT + JNA + FFmpeg + WASAPI, moving them to AVFoundation and UIKit is a rewrite, and the shared layer had no UI to sit on top of it (`:sharedUi`'s `commonMain` was empty). The `:shared` logic stays, because Android and the desktop both build on it. |
 
 **In, and what it costs**

@@ -7,10 +7,10 @@ BitChord is a Kotlin Multiplatform (KMP) music streaming and playback applicatio
   - `jvmSharedMain`: Shared JVM code for Desktop and Android (YouTube parsing, InnerTubeX, NewPipeExtractor, lyrics, OkHttp, Jsoup).
   - Target platforms: Desktop JVM (`jvm`) and Android (`androidTarget()`). The Apple targets were cut — see the iOS row in the README.
 - **`:sharedUi`**: Mobile/multiplatform Compose UI library used by `:app` (Android) and future mobile clients.
-- **`:desktopUi`**: Desktop-isolated Compose UI library for Windows, Linux, and macOS.
-- **`:desktopApp`**: Desktop application entry point, native packaging (MSI, DEB, RPM, DMG).
+- **`:desktopUi`**: Desktop-isolated Compose UI library for Windows and Linux.
+- **`:desktopApp`**: Desktop application entry point, native packaging (MSI, EXE, DEB, RPM).
 - **`:app`**: Android application module (MainActivity, PlaybackService, Media3, Android widgets, DSD native decoder).
-- **CI Workflows**: GitHub Actions workflows building Windows, Linux, macOS, and Android (APK).
+- **CI Workflows**: GitHub Actions workflows building Windows, Linux, and Android (APK).
 
 ## Feature Inventory
 | # | Feature | Description | Milestone | Source |
@@ -68,7 +68,7 @@ BitChord is a Kotlin Multiplatform (KMP) music streaming and playback applicatio
   - `app/src/main/java/`
   - `app/src/main/cpp/`
   - `app/src/main/res/`
-- `desktopApp/` - Desktop Application (Windows, Linux, macOS)
+- `desktopApp/` - Desktop Application (Windows, Linux)
 - `desktopUi/` - Desktop UI Library
 - `.github/workflows/` - CI workflows (`check.yml`, `release.yml`)
 - `gradle.properties` - Centralized version properties and flags
