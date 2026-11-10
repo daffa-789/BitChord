@@ -312,8 +312,8 @@ yang tidak bisa diverifikasi di mesin ini ditulis apa adanya.
 #### Cara merilis (yang dilakukan workflow)
 
 ```bash
-git tag v1.8.30
-git push origin v1.8.30          # push tag = publish; tag tidak akan dibangun kalau tidak di-push
+git tag v1.8.32
+git push origin v1.8.32          # push tag = publish; tag tidak akan dibangun kalau tidak di-push
 ```
 
 Aturan namanya: **tag dikurangi `v` di depan = versi aplikasi**, dan angka patch-nya sekalian jadi
