@@ -17,10 +17,8 @@ fun property(name: String): String = providers.gradleProperty("bitchord.lib.$nam
  * against the other platform's pairing.
  */
 val hostIsWindows = System.getProperty("os.name").contains("Windows", ignoreCase = true)
-val hostIsMac = System.getProperty("os.name").contains("Mac", ignoreCase = true)
 val targetOs: String = (providers.gradleProperty("bitchord.target").orNull ?: when {
     hostIsWindows -> "windows"
-    hostIsMac -> "macos"
     else -> "linux"
 }).lowercase()
 
@@ -36,7 +34,6 @@ val targetOs: String = (providers.gradleProperty("bitchord.target").orNull ?: wh
  */
 val cmp = when (targetOs) {
     "windows" -> property("compose.windows")
-    "macos" -> property("compose.macos")
     else -> property("compose.linux")
 }
 
@@ -46,7 +43,6 @@ val cmp = when (targetOs) {
 // own 1.10.3 / skiko 0.9; only Linux moves to 1.12.
 val haze = when (targetOs) {
     "windows" -> property("haze.windows")
-    "macos" -> property("haze.macos")
     else -> property("haze.linux")
 }
 

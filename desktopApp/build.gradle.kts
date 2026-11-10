@@ -14,20 +14,11 @@ val appVersion: String = providers.gradleProperty("bitchord.version").orNull
 /** Which platform this build is *for*, which is the host unless told otherwise. */
 val hostIsWindows = System.getProperty("os.name").contains("Windows", ignoreCase = true)
 val hostIsLinux = System.getProperty("os.name").contains("Linux", ignoreCase = true)
-val hostIsMac = System.getProperty("os.name").contains("Mac", ignoreCase = true)
 val targetOs: String = (providers.gradleProperty("bitchord.target").orNull ?: when {
     hostIsWindows -> "windows"
     hostIsLinux -> "linux"
-    hostIsMac -> "macos"
-    else -> error("BitChord desktop supports Windows, Linux, and macOS only")
+    else -> error("BitChord desktop ships for Windows and Linux only")
 }).lowercase()
-
-val hostArch = System.getProperty("os.arch").lowercase()
-val targetArch: String = (providers.gradleProperty("bitchord.arch").orNull ?: when {
-    targetOs == "macos" -> "arm64"
-    else -> hostArch
-}).lowercase()
-val isArm64 = targetArch == "aarch64" || targetArch == "arm64"
 
 // Windows installer metadata requires MAJOR.MINOR.BUILD even though the app's public version is
 // intentionally displayed without a patch number (1.7 rather than 1.7.0).
@@ -46,8 +37,7 @@ val ffmpegVersion = "7.1.1-$javacppVersion"
 val nativeClassifier = when (targetOs) {
     "windows" -> "windows-x86_64"
     "linux" -> "linux-x86_64"
-    "macos" -> if (isArm64) "macosx-arm64" else "macosx-x86_64"
-    else -> error("BitChord desktop supports Windows, Linux, and macOS only")
+    else -> error("BitChord desktop ships for Windows and Linux only")
 }
 private fun localProperty(name: String): String = rootProject.file("local.properties")
     .takeIf { it.isFile }
@@ -87,7 +77,6 @@ dependencies {
     // it either way and naming it only made it look optional.
     val javafxClassifier = when (targetOs) {
         "windows" -> "win"
-        "macos" -> if (isArm64) "mac-aarch64" else "mac"
         else -> "linux"
     }
     listOf("base", "graphics", "controls", "web").forEach { module ->
@@ -110,7 +99,6 @@ dependencies {
     // runtime. Preserve Linux's existing dependency graph exactly as it was.
     val haze = when (targetOs) {
         "windows" -> property("haze.windows")
-        "macos" -> property("haze.macos")
         else -> property("haze.linux")
     }
     implementation("dev.chrisbanes.haze:haze:$haze")
@@ -125,7 +113,6 @@ dependencies {
     implementation(
         when (targetOs) {
             "windows" -> compose.desktop.windows_x64
-            "macos" -> if (isArm64) compose.desktop.macos_arm64 else compose.desktop.macos_x64
             else -> compose.desktop.linux_x64
         }
     )
@@ -217,23 +204,6 @@ val fatNativeDrops: Map<String, List<String>> = when (targetOs) {
         ),
         "com.kohlschutter.junixsocket:junixsocket-native-common" to
             junixsocketNativeDirs.filterNot { it == "amd64-Windows10-clang" }.map { "lib/$it/" },
-    )
-
-    "macos" -> mapOf(
-        "org.xerial:sqlite-jdbc" to listOf(
-            "org/sqlite/native/Windows/", "org/sqlite/native/Linux/", "org/sqlite/native/Linux-Musl/",
-            "org/sqlite/native/FreeBSD/", "org/sqlite/native/Linux-Android/",
-            if (isArm64) "org/sqlite/native/Mac/x86_64/" else "org/sqlite/native/Mac/aarch64/",
-        ),
-        "net.java.dev.jna:jna" to jnaNativeDirs.filterNot {
-            it == (if (isArm64) "darwin-aarch64" else "darwin-x86-64")
-        }.map { "com/sun/jna/$it/" },
-        "io.github.dokar3:quickjs-kt-jvm" to listOf(
-            "jni/windows_x64/", "jni/linux_aarch64/", "jni/linux_x64/",
-            if (isArm64) "jni/macos_x64/" else "jni/macos_aarch64/",
-        ),
-        "com.kohlschutter.junixsocket:junixsocket-native-common" to
-            junixsocketNativeDirs.filterNot { it == "aarch64-MacOSX-clang" }.map { "lib/$it/" },
     )
 
     else -> mapOf(
@@ -720,7 +690,6 @@ compose.desktop {
 
         nativeDistributions {
             targetFormats(
-                TargetFormat.Dmg,
                 TargetFormat.Exe,
                 TargetFormat.Msi,
                 TargetFormat.Deb,
@@ -753,19 +722,6 @@ compose.desktop {
                 "jdk.unsupported",
                 "jdk.zipfs",
             )
-
-            macOS {
-                iconFile.set(project.file("packaging/icons/AppIcon.icns"))
-                bundleID = "com.music.bitchord"
-                appCategory = "public.app-category.music"
-                dockName = "BitChord"
-                infoPlist {
-                    extraKeysRawXml = """
-                        <key>NSRequiresAquaSystemAppearance</key>
-                        <false/>
-                    """.trimIndent()
-                }
-            }
 
             linux {
                 iconFile.set(project.file("packaging/icons/AppIcon.png"))
