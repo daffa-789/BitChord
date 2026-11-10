@@ -7,6 +7,12 @@ name: Release
 # Requires the RELEASE_TOKEN secret (a fine-grained PAT with Contents: read+write on this repo): the
 # publish step cannot use GITHUB_TOKEN, because GitHub blocks the Releases API for forks.
 #
+# The token in place today ("BitChord Release Token") expires on 10 November 2027. When it does, the
+# Publish step fails with a permission error that does not name the token, so rotate it before then:
+# make a new fine-grained PAT scoped to this repository with Contents: read+write, replace the
+# secret, and only then delete the old one. A token without an expiry date would remove the chore
+# but not the risk, so the expiry is deliberate.
+#
 # Version rule: the tag without its leading `v` is the app version, and its patch component doubles as
 # the desktop version code (`desktopVersionCode` in desktopApp/build.gradle.kts), so the installer's
 # numeric version matches the tag it was cut from.
