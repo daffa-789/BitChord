@@ -252,8 +252,13 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
 
       # packageRpm shells out to rpmbuild, which the Ubuntu image does not carry.
-      - name: Install the RPM packager
-        run: sudo apt-get update --quiet && sudo apt-get install -y --no-install-recommends rpm
+      # squashfs-tools is for appimagetool, which shells out to mksquashfs; without it the
+      # AppImage step would quietly produce nothing. `file` and `desktop-file-utils` are
+      # what appimagetool uses to read the architecture and check the .desktop entry.
+      - name: Install the packagers' tools
+        run: |
+          sudo apt-get update --quiet
+          sudo apt-get install -y --no-install-recommends rpm squashfs-tools file desktop-file-utils
 
       - name: Package .deb and .rpm
         run: >
