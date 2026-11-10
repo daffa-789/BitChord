@@ -23,12 +23,12 @@ val targetOs: String = (providers.gradleProperty("bitchord.target").orNull ?: wh
 // Windows installer metadata requires MAJOR.MINOR.BUILD even though the app's public version is
 // intentionally displayed without a patch number (1.7 rather than 1.7.0).
 // The build number is the desktop version code; it also keeps "-beta1" out of the numeric installer version.
-// Release tags carry it — `v1.8.32` builds 1.8.32 — so CI names the packages after what it tagged. A
+// Release tags carry it — `v1.8.33` builds 1.8.33 — so CI names the packages after what it tagged. A
 // plain checkout keeps the code below, which is what an installer already on a machine compares against
 // when it decides whether this is an upgrade.
 val desktopVersionCode: Int = providers.gradleProperty("bitchord.build").orNull
     ?.trim()?.toIntOrNull()?.takeIf { it >= 0 }
-    ?: 32
+    ?: 33
 val nativePackageVersion = appVersion.substringBefore('-').split('.').take(2).joinToString(".") + ".$desktopVersionCode"
 
 // FFmpeg decodes audio; see DesktopAudioDecoder.
