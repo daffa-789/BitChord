@@ -35,25 +35,6 @@ jobs:
       - name: Run shared tests
         run: .\gradlew.bat :shared:jvmTest
 
-  desktop-macos:
-    name: Desktop Build (macOS target)
-    runs-on: macos-15
-    steps:
-      - uses: actions/checkout@v7
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - uses: gradle/actions/setup-gradle@v6
-
-      # The DMG is only packaged in Release, which no tag has triggered yet; compiling on the Mac image
-      # is what keeps the macOS branches from drifting out of build between releases.
-      - name: Compile Kotlin Desktop for macOS
-        run: ./gradlew :desktopApp:compileKotlin
-
   desktop-linux:
     name: Desktop Build (Linux target)
     runs-on: ubuntu-latest

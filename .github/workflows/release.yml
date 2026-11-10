@@ -1,8 +1,8 @@
 name: Release
 
-# A tag is the release. Pushing `v1.8.29` builds Windows + Linux packages and publishes them with a
-# SHA-256 manifest. `workflow_dispatch` rebuilds a tag that already exists — after a runner hiccup, or
-# as a draft to read the notes before publishing.
+# A tag is the release. Pushing `v1.8.33` builds the Windows and Linux packages and the Android
+# APKs, and publishes them with a SHA-256 manifest. `workflow_dispatch` rebuilds a tag that already
+# exists — after a runner hiccup, or as a draft to read the notes before publishing.
 #
 # Requires the RELEASE_TOKEN secret (a fine-grained PAT with Contents: read+write on this repo): the
 # publish step cannot use GITHUB_TOKEN, because GitHub blocks the Releases API for forks.
@@ -95,9 +95,39 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "tag=${tag} version=${version} build=${build} prerelease=${prerelease}"
 
+  # Everything the release needs, checked before a single package is built.
+  # A missing secret used to surface only after fifteen minutes of building,
+  # in the one step that could not do anything about it.
+  preflight:
+    name: Preflight
+    needs: meta
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Check the repository secrets the release needs
+        env:
+          RELEASE_TOKEN: ${{ secrets.RELEASE_TOKEN }}
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          missing=()
+          for name in RELEASE_TOKEN KEYSTORE_BASE64 KEYSTORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
+            if [ -z "${!name}" ]; then missing+=("$name"); fi
+          done
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::missing repository secrets: ${missing[*]}"
+            echo "Add them under Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+          echo "all five secrets are present"
+          echo "keystore is $(( $(printf '%s' "$KEYSTORE_BASE64" | base64 -d | wc -c) / 1024 )) KB"
+
   windows:
     name: Windows packages
-    needs: meta
+    needs: [meta, preflight]
     runs-on: windows-latest
     timeout-minutes: 60
     steps:
@@ -205,7 +235,7 @@ jobs:
 
   linux:
     name: Linux packages
-    needs: meta
+    needs: [meta, preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -230,6 +260,37 @@ jobs:
           ./gradlew :desktopApp:packageDeb :desktopApp:packageRpm
           -Pbitchord.version=${{ needs.meta.outputs.version }}
           -Pbitchord.build=${{ needs.meta.outputs.build }}
+
+      # The AppImage is the third Linux format, and the only one a user can run
+      # without a package manager. Both steps are allowed to fail: appimagetool is
+      # fetched from the network, and a link that rots must not cost the release
+      # the .deb and .rpm that are already built and waiting.
+      - name: Fetch appimagetool
+        continue-on-error: true
+        run: |
+          set -euo pipefail
+          curl -fsSL --retry 3 --retry-delay 5 \
+            "https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage" \
+            -o appimagetool
+          chmod +x appimagetool
+          echo "appimagetool: $(du -h appimagetool | cut -f1)"
+
+      - name: Package the AppImage
+        id: appimage
+        continue-on-error: true
+        env:
+          VERSION: ${{ needs.meta.outputs.version }}
+        run: |
+          set -euo pipefail
+          APP_IMAGE=desktopApp/build/compose/binaries/main/app/BitChord
+          if [ ! -x "$APP_IMAGE/bin/BitChord" ]; then
+            echo "no app image at $APP_IMAGE - skipping the AppImage"
+            exit 0
+          fi
+          mkdir -p dist
+          desktopApp/packaging/appimage.sh \
+            "$APP_IMAGE" "dist/BitChord-${VERSION}-x86_64.AppImage" ./appimagetool
+          ls -l dist
 
       - name: Stage the artefacts
         run: |
@@ -259,58 +320,9 @@ jobs:
           if-no-files-found: error
           retention-days: 30
 
-  macos:
-    name: macOS arm64 DMG
-    needs: meta
-    runs-on: macos-15
-    timeout-minutes: 60
-    steps:
-      - uses: actions/checkout@v7
-        with:
-          ref: ${{ needs.meta.outputs.tag }}
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v6
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - uses: gradle/actions/setup-gradle@v6
-
-      - name: Package .dmg
-        run: >
-          ./gradlew :desktopApp:packageDmg
-          -Pbitchord.version=${{ needs.meta.outputs.version }}
-          -Pbitchord.build=${{ needs.meta.outputs.build }}
-
-      - name: Stage the artefacts
-        run: |
-          set -euo pipefail
-          mkdir -p dist
-          cp desktopApp/build/compose/binaries/main/dmg/*.dmg dist/
-          ls -l dist
-
-      - name: Hash what ships
-        run: |
-          set -euo pipefail
-          cd dist
-          for file in *.dmg; do
-            [ -f "$file" ] || continue
-            printf '%s  %s\n' "$(shasum -a 256 -- "$file" | cut -d' ' -f1)" "$file"
-          done > SHA256SUMS.macos.txt
-          cat SHA256SUMS.macos.txt
-
-      - name: Upload macOS artefacts
-        uses: actions/upload-artifact@v7
-        with:
-          name: dist-macos
-          path: dist/
-          if-no-files-found: error
-          retention-days: 30
-
   android:
     name: Android Release APK
-    needs: meta
+    needs: [meta, preflight]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     outputs:
@@ -410,7 +422,7 @@ jobs:
 
   release:
     name: Publish
-    needs: [meta, windows, linux, macos, android]
+    needs: [meta, preflight, windows, linux, android]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     permissions:
@@ -442,7 +454,7 @@ jobs:
           set -euo pipefail
           cd dist
           {
-            echo "BitChord ${VERSION}: Multiplatform release for Android, Windows, Linux, and macOS (Apple Silicon). Built by this workflow run from \`${COMMIT:0:10}\`."
+            echo "BitChord ${VERSION}: Multiplatform release for Android, Windows, and Linux. Built by this workflow run from \`${COMMIT:0:10}\`."
             echo
             if [ "$PRERELEASE" = "true" ]; then
               echo "> [!NOTE]"
@@ -465,16 +477,11 @@ jobs:
               echo '  **These APKs are unsigned**: Android will refuse to install them. They exist so CI'
               echo '  proves the build; add the `KEYSTORE_BASE64` secret to get an installable, signed APK.'
             fi
-            echo '- **macOS** — `BitChord-*.dmg` for Apple Silicon (macOS 12+ / arm64).'
-            echo '  This build is unsigned and un-notarised, so Gatekeeper stops the first launch with'
-            echo '  *"BitChord is damaged and cannot be opened"*. That is the quarantine attribute on a'
-            echo '  file downloaded from a browser, not a broken download — open it once by hand:'
-            echo '  right-click `BitChord.app` in `/Applications` → **Open** → **Open**, or run'
-            echo '  `xattr -dr com.apple.quarantine /Applications/BitChord.app`.'
             echo '- **Windows** — `BitChord-*.msi` for a per-user installer (no admin needed);'
             echo '  `BitChord-*.exe` is the same installer as a single file; `*-windows-portable.zip`'
             echo '  installs nothing but expects a Java 21+ runtime on `PATH` or in `JAVA_HOME`.'
-            echo '- **Linux** — `*.deb` for Debian/Ubuntu/SteamOS, `*.rpm` for Fedora/openSUSE/RHEL.'
+            echo '- **Linux** — `*.deb` for Debian/Ubuntu/SteamOS, `*.rpm` for Fedora/openSUSE/RHEL,'
+            echo '  and `*.AppImage` to run straight from the file without installing anything.'
             echo
             echo '## Verifying the download'
             echo
