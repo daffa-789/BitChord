@@ -104,9 +104,9 @@
 | Platform | Artefact | How it is verified |
 | --- | --- | --- |
 | Windows 11 | `.msi`, `.exe`, portable `.zip` | compiled on a `windows-latest` runner with the 314-test desktop suite; installers built and launched locally |
-| Linux | `.deb`, `.rpm` | compiled on `ubuntu-latest`. It has never been run on a real Linux desktop |
-| macOS (Apple Silicon) | `.dmg` | compiled on a `macos-15` (arm64) runner. Nobody has booted the DMG on a Mac. Unsigned and un-notarised: the first launch needs a right-click → **Open** |
-| Android (phone · tablet · TV) | `*.apk` | `:app:assembleDebug` compiles here, including the NDK `bitchord_analysis` library. A release APK needs the `KEYSTORE_BASE64` secret — without it Android refuses to install the file |
+| Linux | `.deb`, `.rpm` | compiled on `ubuntu-latest`. The `.deb` payload was opened and every one of its 29 shared libraries reads as `x86_64` ELF; the `.rpm` header declares `CPU = x86_64`, `Host OS = linux`. Neither has been launched on a real Linux desktop |
+| macOS (Apple Silicon) | `.dmg` | compiled on a `macos-15` (arm64) runner. The image was opened and **all 35 Mach-O binaries inside it — the launcher, `libjli.dylib` and every bundled `.dylib` — read as arm64**, so the bundled JRE and the native libraries agree on the architecture. Nobody has booted the DMG on a Mac. Unsigned and un-notarised: the first launch needs a right-click → **Open** |
+| Android (phone · tablet · TV) | `*.apk` | `:app:assembleDebug` compiles here, including the NDK `bitchord_analysis` library. The release APK is signed — its APK Signing Block carries the v2 scheme and the keystore's own certificate, SHA-256 `A40AEB935F…986C5A` |
 
 The desktop client is the Compose-for-JVM app. It runs on Windows 11 (Fluent window frame, Dynamic
 Island lyrics, SMTC media keys) and on Linux (MPRIS media controls and the StatusNotifier tray).
@@ -144,13 +144,15 @@ additionally compiles the same sources natively on `ubuntu-latest` (the `desktop
 On Windows, `cmake`, `Ninja` and a MinGW C++ compiler on `PATH` add the native window frame and
 SMTC media keys; without them the app still builds and runs, just without those two.
 
-Artifacts from a current build on this repo, for reference:
+What release `v1.8.32` actually published, for reference:
 
 | Output | Size |
 | --- | --- |
-| `desktopApp/build/compose/binaries/main/msi/BitChord-1.8.29.msi` | 222 MB |
-| `.../binaries/main/app/BitChord/` (jlink app image) | 312 MB |
-| `windowsPortable` `lib/` directory | 191 MB (was 310 MB before the trim) |
+| `BitChord-1.8.32.msi` / `.exe` | 198 MB each |
+| `BitChord-1.8.32-windows-portable.zip` | 160 MB |
+| `BitChord-1.8.32.dmg` | 198 MB |
+| `bitchord_1.8.32_amd64.deb` / `bitchord-1.8.32-1.x86_64.rpm` | 189 MB each |
+| `app-prod-{arm64-v8a, armeabi-v7a, x86_64, universal}-release.apk` | 63 / 53 / 69 / 161 MB |
 
 **Publishing** — a tag is the release: `git tag v1.8.32 && git push origin v1.8.32` runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the Windows MSI, Exe and
@@ -173,7 +175,17 @@ Get-Content SHA256SUMS.txt | ForEach-Object {
 ```
 
 Public releases deliberately ship no bundled Last.fm API key — a build that baked one in would write it in
-plain text into the launcher everyone downloads. Scrobbling still works: Settings asks for your own key.
+plain text into the launcher everyone downloads. Scrobbling works anyway: Settings asks for your own key.
+
+**Signing** — the release APK is signed, and the key is the app's identity for good: an APK that is
+already installed can only be updated by one signed with the same key. `keystore.properties.example`
+in the repository root carries the `keytool` command that creates it. The file itself is never
+committed — `*.jks` and `keystore.properties` are ignored by git — and CI takes the key from four
+repository secrets: `KEYSTORE_BASE64` (the `.jks`, base64-encoded), `KEYSTORE_PASSWORD`, `KEY_ALIAS`
+and `KEY_PASSWORD`. Without them the release build still runs, it just produces an unsigned APK that
+Android refuses to install. The publishing step needs a second secret, `RELEASE_TOKEN`: a
+fine-grained PAT scoped to this repository with `Contents: read+write`, because GitHub blocks the
+Releases API for a fork when the workflow uses the automatic `GITHUB_TOKEN`.
 
 </div>
 
