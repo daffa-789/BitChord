@@ -9,7 +9,7 @@
 
 ### Aesthetic YouTube Music Client
 
-**Desktop on Windows, Linux and macOS, the Android app, and the shared iOS framework — all built from this one tree.** [What this fork changes](#this-fork).
+**Desktop on Windows, Linux and macOS, and the Android app — all built from this one tree.** [What this fork changes](#this-fork).
 
 <br/>
 
@@ -105,9 +105,8 @@
 | --- | --- | --- |
 | Windows 11 | `.msi`, `.exe`, portable `.zip` | compiled on a `windows-latest` runner with the 314-test desktop suite; installers built and launched locally |
 | Linux | `.deb`, `.rpm` | compiled on `ubuntu-latest`. It has never been run on a real Linux desktop |
-| macOS (Apple Silicon) | `.dmg` | compiled on a `macos-14` runner. Nobody has booted the DMG on a Mac |
+| macOS (Apple Silicon) | `.dmg` | compiled on a `macos-14` runner. Nobody has booted the DMG on a Mac. Unsigned and un-notarised: the first launch needs a right-click → **Open** |
 | Android (phone · tablet · TV) | `*.apk` | `:app:assembleDebug` compiles here, including the NDK `bitchord_analysis` library. A release APK needs the `KEYSTORE_BASE64` secret — without it Android refuses to install the file |
-| iOS | `BitChordShared.xcframework` | assembled on `macos-14`. This is the shared library for someone's own iOS app; **there is no iPhone client in this repo** |
 
 The desktop client is the Compose-for-JVM app. It runs on Windows 11 (Fluent window frame, Dynamic
 Island lyrics, SMTC media keys) and on Linux (MPRIS media controls and the StatusNotifier tray).
@@ -135,7 +134,6 @@ clone away:
 
 # Android (needs an Android SDK: local.properties sdk.dir, or ANDROID_HOME)
 ./gradlew :app:assembleDebug               # the dev+prod flavours, 3 ABIs + universal
-./gradlew :shared:assembleBitChordSharedReleaseXCFramework   # the iOS framework
 ```
 
 `-Pbitchord.target=linux` picks the Linux native dependencies (FFmpeg/Skiko/JavaFX classifiers)
@@ -154,11 +152,11 @@ Artifacts from a current build on this repo, for reference:
 | `.../binaries/main/app/BitChord/` (jlink app image) | 312 MB |
 | `windowsPortable` `lib/` directory | 191 MB (was 310 MB before the trim) |
 
-**Publishing** — a tag is the release: `git tag v1.8.30 && git push origin v1.8.30` runs
+**Publishing** — a tag is the release: `git tag v1.8.31 && git push origin v1.8.31` runs
 [`.github/workflows/release.yml`](.github/workflows/release.yml), which builds the Windows MSI, Exe and
 portable zip on a Windows runner, the `.deb` and `.rpm` on a Linux runner, the `.dmg` on a macOS
-runner, the signed-or-unsigned `*.apk` files on a Linux runner with an Android SDK, and
-`BitChordShared.xcframework` for iOS — then publishes all of it as one
+runner, and the signed-or-unsigned `*.apk` files on a Linux runner with an Android SDK — then
+publishes all of it as one
 GitHub Release with a `SHA256SUMS.txt` manifest. The tag's patch number becomes the installer version
 code and the APK's `versionCode`, so the packages a release ships are named after the tag. Check a
 download before you install it:
@@ -200,7 +198,7 @@ tree builds both.
 | Listen Together / PartySync / QR invite | Out of the **desktop** UI: it needed a third-party server nobody ever filled in, and the button only ever produced "Set the party server address first". The party models are back in `:shared` because the phone client drives them, and a party still needs a server you point at yourself — upstream's `backend/` is not part of this tree. |
 | Presence telemetry | A "the app is open" ping to the upstream server every ~5 minutes, with no switch in Settings. Out on both clients — the Android application class no longer installs it either. |
 | macOS | The Mac *window* code stays out: Mac frame (550 lines of JNA), traffic-light caption buttons, Dock listener. A Mac gets standard window decorations. macOS itself is a build target — `packageDmg` runs on `macos-14`, and `check.yml` compiles the Mac branches of the Gradle build on every push. |
-| iOS | No iPhone client, and this is not a shortcut around it: the players run on AWT + JNA + FFmpeg + WASAPI, and moving them to AVFoundation and UIKit is a rewrite, while streaming YouTube Music outside Google's own app is not something Apple's terms allow. What does ship is `BitChordShared.xcframework` — the shared layer, built and assembled in CI, for a developer's own iOS app. |
+| iOS | Cut entirely: no Apple targets in `:shared`, no iOS job in CI, no framework in the release. There was never an iPhone client here — the players run on AWT + JNA + FFmpeg + WASAPI, moving them to AVFoundation and UIKit is a rewrite, and the shared layer had no UI to sit on top of it (`:sharedUi`'s `commonMain` was empty). The `:shared` logic stays, because Android and the desktop both build on it. |
 
 **In, and what it costs**
 
@@ -249,9 +247,6 @@ BitChord is free and always will be — if it's earned a spot in your rotation, 
 
 <a href="https://ko-fi.com/kushagrasinghx" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/donate/kofi-singular-alt/cozy.svg" alt="Support me on Ko-fi" height="55"/></a>
 <a href="https://paypal.me/kuxhagrasingh" target="_blank" rel="noopener noreferrer"><img src="https://cdn.jsdelivr.net/gh/JMcrafter26/badges@main/src/assets/donate/paypal-plural/cozy.svg" alt="Support us on PayPal" height="55"/></a>
-
-<br/>
-<img src="upi_support.jpg" alt="UPI Support" width="250" />
 
 </div>
 

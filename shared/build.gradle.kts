@@ -1,5 +1,4 @@
 import org.jetbrains.kotlin.gradle.dsl.JvmTarget
-import org.jetbrains.kotlin.gradle.plugin.mpp.apple.XCFramework
 
 /** Versions shared with the desktop modules; see the block in gradle.properties. */
 fun property(name: String): String = providers.gradleProperty("bitchord.lib.$name").get()
@@ -27,19 +26,9 @@ kotlin {
         }
     }
 
-    val xcf = XCFramework("BitChordShared")
-    listOf(
-        iosX64(),
-        iosArm64(),
-        iosSimulatorArm64()
-    ).forEach { iosTarget ->
-        iosTarget.binaries.framework {
-            baseName = "BitChordShared"
-            isStatic = true
-            xcf.add(this)
-        }
-    }
-
+    // No Apple targets. An iOS build was cut from this tree: there was no iOS UI to build
+    // (the phone's Compose UI lives in :app, which is Android-only, and :sharedUi had an empty
+    // commonMain), so the XCFramework shipped a logic layer nobody could put a player on top of.
     applyDefaultHierarchyTemplate()
 
     sourceSets {

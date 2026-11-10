@@ -30,7 +30,7 @@ jobs:
       - name: Run desktop tests
         run: .\gradlew.bat :desktopApp:test
 
-      # The shared layer is what the phone, the desktop and the iOS framework all compile against, and
+      # The shared layer is what the phone and the desktop both compile against, and
       # its own suite never ran here before — so a purge on one side could go unnoticed.
       - name: Run shared tests
         run: .\gradlew.bat :shared:jvmTest
@@ -104,25 +104,3 @@ jobs:
 
       - name: Assemble Android Debug APK
         run: ./gradlew :app:assembleDebug -Pbitchord.ndkVersion=${{ steps.ndk.outputs.version }}
-
-  ios:
-    name: iOS Framework Check
-    runs-on: macos-14
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Set up JDK 21
-        uses: actions/setup-java@v4
-        with:
-          java-version: '21'
-          distribution: 'temurin'
-
-      - uses: gradle/actions/setup-gradle@v4
-
-      # Linking one framework is not the shipped artefact: Release assembles the XCFramework (device +
-      # simulator) that actually gets zipped, so main builds that too rather than finding out at tag time.
-      - name: Link iOS Simulator Framework
-        run: ./gradlew :shared:linkReleaseFrameworkIosSimulatorArm64
-
-      - name: Assemble the release XCFramework
-        run: ./gradlew :shared:assembleBitChordSharedReleaseXCFramework
