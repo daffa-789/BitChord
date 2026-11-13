@@ -51,7 +51,8 @@
 - **Apple-like lyrics animation** — credit to [binimum](https://github.com/binimum/am-lyrics).
 
 #### Connectivity & Accounts
-- **Sign in with your Google account** for personalized content.
+- **Sign in with your Google account** for personalized content. Several logins can be held at
+  once, each with its own channels, and any of them can be signed out of again.
 - **Spotify integration** — connect your account to play your playlists and Liked Songs.
 - **Discord Rich Presence** — in-app login, live track/artist/album and progress.
 - **Scrobbling** to Last.fm and ListenBrainz.
@@ -66,19 +67,18 @@
 - **Lyrics providers** — credit to [lrc.red](https://lrc.red), [BiniLyrics](https://github.com/binimum), [BetterLyrics](https://github.com/better-lyrics/better-lyrics), [PaxSenix](https://lyrics.paxsenix.org), [LyricsPlus](https://github.com/ibratabian17/YouLyPlus), [SimpMusic](https://github.com/maxrave-dev/SimpMusic), [Unison](https://unison.boidu.dev), [Megalobiz](https://www.megalobiz.com), [KuGou](https://www.kugou.com), [LRCLIB](https://lrclib.net), [Musixmatch](https://www.musixmatch.com) and [Genius](https://genius.com).
 - **Dynamic, artwork-driven theming** — Material palette extracted from album art.
 - **Frosted-glass UI** — Telegram-style translucent bars via Haze, Material 3 theming.
-- **Dynamic Island player** — the player that stays with you: while BitChord is in front the in-app
-  dock carries playback, and the moment the main window is hidden or loses focus the capsule takes
-  over. A 680×116 capsule on its own frameless, transparent, always-on-top window with glass tinted by
-  the current cover: cover art, transport controls and three rolling lyric lines, and the Full layout
-  adds a scrub row with elapsed and remaining time. Click the capsule to open Now Playing. Out of the
-  taskbar and Alt-Tab, and it never steals focus from what you are typing into. Three layouts
-  (Full / Compact / Mini), six anchors, size and opacity sliders, drag-to-position that remembers
-  where you put it and snaps to screen edges, an optional click-through mode (on Windows,
-  `WS_EX_TRANSPARENT` via JNA, so clicks fall through the capsule to whatever is beneath it), a menu
-  whose "Up next" section starts any song in the YouTube Music queue without opening the app, and a
-  toggle in the system tray. It only appears once a song is loaded. The main window
-  is separate: on Windows it draws its own Fluent caption with a DWM backdrop, on Linux the window
-  manager decorates it.
+- **Dynamic Island player** — the player that stays with you. A capsule on its own frameless,
+  transparent, always-on-top window, out of the taskbar and Alt-Tab, and it never steals focus from
+  what you are typing into. It stays on screen whatever is in front of it: it rests as a 380×44
+  pill with the cover and the line being sung, and the moment the pointer lands on it, it opens
+  into a 680×116 face with the transport, three rolling lyric lines and a scrub row — the window
+  grows with the glass, so nothing is ever clipped or left floating in empty space. Click the
+  capsule to open Now Playing. Six anchors, drag-to-position that remembers where you put it, an
+  optional click-through mode (on Windows, `WS_EX_TRANSPARENT` via JNA, so clicks fall through the
+  capsule to whatever is beneath it), a menu whose "Up next" section starts any song in the YouTube
+  Music queue without opening the app, and a toggle in the system tray. It only appears once a song
+  is loaded. The main window is separate: on Windows it draws its own Fluent caption with a DWM
+  backdrop, on Linux the window manager decorates it.
 
 #### Controls & Tweaks
 - **Audio quality ceiling** — pick where on the ladder a track starts, from ~64 kbps up to bit-exact lossless.
@@ -216,13 +216,19 @@ tree builds both.
 - A YouTube Music-inspired shell around BitChord's own dark token set: a persistent player dock with
   hover-expanded seek, volume and audio-output controls; restyled Home, Explore, Library and Search;
   a landscape Now Playing; and the island as the out-of-window player.
+- `javafx-media` named as a dependency of its own, with the platform classifier. It used to arrive
+  only as a transitive of `javafx-web`, without that classifier, so Gradle handed over the empty
+  jar: `javafx.scene.web.WebEngine` died in its static initialiser with
+  `NoClassDefFoundError: com/sun/media/jfxmedia/events/PlayerStateListener`, on the JavaFX thread,
+  where nothing catches it. The in-app sign-in window could never open, the sign-in sat on its
+  spinner for ever, and BotGuard never produced a token.
 - One native loader (`DesktopNativeRuntime`) shared by the window frame and SMTC, and a portable zip
   task (`windowsPortable`) for machines where an installer is not wanted.
 - CI that compiles the Linux sources as well, so the MPRIS / StatusNotifier / ALSA side cannot drift
   out of build (the Linux code itself is deliberately kept).
 
 **Measured effect** — the portable `lib/` went from 310 MB to 191 MB (−38 %), the string catalogues
-from 152 KB to 72 KB after deleting the keys nothing referenced, and `:desktopApp:test` runs 314
+from 152 KB to 72 KB after deleting the keys nothing referenced, and `:desktopApp:test` runs 323
 tests green. The packaged `BitChord.exe` was launched on this machine to prove the trimmed jlink
 runtime is enough for the real app, not just for `:desktopApp:run`.
 

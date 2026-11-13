@@ -18,6 +18,7 @@ import javafx.scene.web.WebView
 import javafx.stage.Stage
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.suspendCancellableCoroutine
+import kotlinx.coroutines.withTimeoutOrNull
 
 /**
  * In-app sign-in, as Android does it: the provider's own web login in a WebView, and the session read
@@ -56,16 +57,35 @@ internal object DesktopWebSignIn {
 
     private suspend fun capture(service: Service): String {
         check(available) { "This desktop cannot show a sign-in window (JavaFX did not start)." }
-        return suspendCancellableCoroutine { continuation ->
-            Platform.runLater {
-                val window = SignInWindow(service) { result ->
-                    if (continuation.isActive) continuation.resumeWith(result)
+        // A safety net, not the ordinary path: closing the window cancels it, and a WebView that
+        // cannot be built now reports itself. What this catches is the sign-in that would
+        // otherwise sit on its spinner for ever because nothing ever came back.
+        val captured = withTimeoutOrNull(SIGN_IN_TIMEOUT_MS) {
+            suspendCancellableCoroutine { continuation ->
+                Platform.runLater {
+                    try {
+                        val window = SignInWindow(service) { result ->
+                            if (continuation.isActive) continuation.resumeWith(result)
+                        }
+                        continuation.invokeOnCancellation { Platform.runLater(window::cancel) }
+                        window.show()
+                    } catch (failure: Throwable) {
+                        // The window could not even be built — a WebView that will not start, most
+                        // likely. The exception would otherwise die on the JavaFX thread, where
+                        // nothing catches it, and the sign-in would never finish.
+                        DesktopTrackLog.log("sign-in: the sign-in window failed to open: ${failure.message}")
+                        if (continuation.isActive) continuation.resumeWith(Result.failure(failure))
+                    }
                 }
-                continuation.invokeOnCancellation { Platform.runLater(window::cancel) }
-                window.show()
             }
         }
+        return captured ?: throw IllegalStateException(
+            "The sign-in window was open for ${SIGN_IN_TIMEOUT_MS / 60_000} minutes without finishing.",
+        )
     }
+
+    /** How long a sign-in may sit open before the app gives up on it. */
+    private const val SIGN_IN_TIMEOUT_MS = 5 * 60_000L
 
     private const val SPOTIFY_COOKIE = "sp_dc"
 

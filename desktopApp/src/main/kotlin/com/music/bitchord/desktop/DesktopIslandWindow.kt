@@ -1,50 +1,36 @@
 package com.music.bitchord.desktop
 
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.hoverable
-import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
-import androidx.compose.foundation.layout.Arrangement
+import androidx.compose.animation.core.animate
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.rounded.Close
-import androidx.compose.material.icons.rounded.Lock
-import androidx.compose.material.icons.rounded.LockOpen
-import androidx.compose.material.icons.rounded.MoreHoriz
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.input.pointer.isPrimaryPressed
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.Window
 import androidx.compose.ui.window.WindowPosition
 import androidx.compose.ui.window.rememberWindowState
+import com.music.bitchord.ui.theme.BcMotion
 import com.sun.jna.Native
 import com.sun.jna.platform.win32.User32
 import com.sun.jna.platform.win32.WinDef.HWND
 import com.sun.jna.platform.win32.WinUser
 import java.awt.Dimension
+import java.awt.GraphicsConfiguration
 import java.awt.GraphicsEnvironment
-import java.awt.Point
 import java.awt.Toolkit
 import java.awt.Window as AwtWindow
-import kotlin.math.abs
 import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
@@ -53,9 +39,9 @@ import kotlinx.coroutines.delay
  *
  * `WS_EX_TRANSPARENT` (with `WS_EX_LAYERED`, its usual companion on a transparent window) is what
  * makes the system's hit test skip a window entirely, so a click lands on whatever is underneath.
- * With the flag on, the capsule receives no mouse input at all — no drag, no menu, no transport —
- * which is exactly what the toggle promises, and the way back is the toolbar's island button or
- * Settings, neither of which lives under the capsule.
+ * With the flag on, the capsule receives no mouse input at all — no menu, no transport — which is
+ * exactly what the toggle promises, and the way back is the toolbar's island button or Settings,
+ * neither of which lives under the capsule.
  *
  * JNA's own User32 mapping is used rather than a new export in `bitchord_window.dll`: the frame
  * bridge installs on the main window and would need a second lookup for the island, while this is
@@ -96,7 +82,7 @@ internal object DesktopIslandClickThrough {
 }
 
 /**
- * The floating capsule, as a window of its own.
+ * The island: a frameless window that stays on screen and changes shape.
  *
  * It used to be drawn inside the main window, which made "hide the app" and "keep the island" the
  * same request: hiding the window took the capsule with it. A Dynamic Island that disappears when
@@ -104,9 +90,14 @@ internal object DesktopIslandClickThrough {
  * while the app itself is out of the way. So it is a separate, undecorated, transparent,
  * always-on-top window that the main window's visibility has no say over.
  *
- * It is deliberately not focusable and never takes the taskbar: it is a readout you glance at, not
- * a window you work in. Everything it shows comes from [DesktopFloatingLyricsManager], which the
- * main window keeps fed whether or not it is on screen.
+ * And it does not go away when the app comes forward either. That is the other half of "stuck to
+ * the screen": the capsule rests at the top centre of the display, over whatever is in front of
+ * it, and opens when the pointer lands on it. It is a readout you glance at, not a window you
+ * work in — it never takes the focus, and it never appears in the taskbar or in Alt-Tab.
+ *
+ * It is not a window you move either. It belongs to the screen the way the notch belongs to the
+ * phone, so there is no dragging, no place to put it and no way to lose it off the edge of the
+ * display.
  *
  * When the island is switched off, nothing is composed at all — the window is not merely hidden
  * but absent, so an off island costs no AWT peer, no Compose composition and no state collection.
@@ -118,69 +109,85 @@ internal fun DesktopIslandWindow() {
     val enabled by DesktopDynamicIslandSettings.enabled.collectAsState()
     // An off island is no island: no window, no composition, nothing to weigh the process down.
     if (!enabled) return
-    val layoutSetting by DesktopDynamicIslandSettings.layout.collectAsState()
-    val anchor by DesktopDynamicIslandSettings.anchor.collectAsState()
+
     val scale by DesktopDynamicIslandSettings.scale.collectAsState()
-    val opacity by DesktopDynamicIslandSettings.opacity.collectAsState()
-    val autoCollapse by DesktopDynamicIslandSettings.autoCollapse.collectAsState()
     val hideWhenPaused by DesktopDynamicIslandSettings.hideWhenPaused.collectAsState()
-    val locked by DesktopDynamicIslandSettings.locked.collectAsState()
     val clickThrough by DesktopDynamicIslandSettings.clickThrough.collectAsState()
-    val offsetX by DesktopDynamicIslandSettings.offsetX.collectAsState()
-    val offsetY by DesktopDynamicIslandSettings.offsetY.collectAsState()
 
-    val mainFocused by DesktopWindowVisibility.focused.collectAsState()
-    val mainVisible by DesktopWindowVisibility.visible.collectAsState()
-
-    val song by DesktopFloatingLyricsManager.currentSong.collectAsState()
-    val isPlaying by DesktopFloatingLyricsManager.isPlaying.collectAsState()
-    val lines by DesktopFloatingLyricsManager.lyricsLines.collectAsState()
-    val repeatMode by DesktopFloatingLyricsManager.repeatMode.collectAsState()
+    val song by DesktopIslandState.currentSong.collectAsState()
+    val isPlaying by DesktopIslandState.isPlaying.collectAsState()
+    val lines by DesktopIslandState.lyricsLines.collectAsState()
+    val repeatMode by DesktopIslandState.repeatMode.collectAsState()
 
     var menuOpen by remember { mutableStateOf(false) }
-    // True while the pointer is down on the FULL capsule's scrub bar, so the same drag scrubs the
-    // song instead of carrying the window across the screen.
+    // True while the pointer is down on the scrub bar, so the same drag scrubs the song.
     var seeking by remember { mutableStateOf(false) }
-    val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
 
-    // Same three rungs as the in-window capsule: nothing playing is the mini pill, and hovering
-    // grows an auto-collapsed island back. A scrub keeps it grown too — dragging past the edge of
-    // the capsule would otherwise collapse the very bar being dragged.
-    val expanded = !autoCollapse || isHovered || menuOpen || seeking
-    val shownLayout = when {
-        song == null -> IslandLayout.MINI
-        expanded -> layoutSetting
-        else -> IslandLayout.MINI
+    /**
+     * Whether the pointer is on the capsule.
+     *
+     * Not the platform's own answer. The window is resized on every frame of the morph, and a
+     * window that moves under a stationary pointer has its enter and leave events delivered
+     * whenever the system's hit test changes its mind — which, on a growing window sitting over
+     * another one, it did: the pointer stayed on the glass and the island kept losing the hover,
+     * so it opened and shut again and again while the mouse sat still.
+     *
+     * The pointer's place on the screen is read directly instead, and compared with the glass's
+     * own rectangle. That cannot flicker: the same question gets the same answer until either
+     * the glass or the pointer really has moved.
+     */
+    val hovered = remember { mutableStateOf(false) }
+
+    /**
+     * How far the capsule has grown, from 0 (the resting pill) to 1 (the full face).
+     *
+     * One number drives everything: the window's own bounds and the drawing inside it. That is
+     * what makes the morph seamless — before, the window snapped to the new size while the
+     * capsule animated inside it, so for a third of a second the glass was either clipped or
+     * floating in a box of empty space.
+     */
+    val expansion = remember { mutableFloatStateOf(0f) }
+    // A capsule that lets clicks through is a readout: it does not react to the pointer either. A
+    // paused island is not a player that has stopped, but a player that has stopped — and a stopped
+    // player is not something the pointer opens. Only a playing one does.
+    val wantExpanded = (!clickThrough && hovered.value && isPlaying) || menuOpen || seeking
+    LaunchedEffect(wantExpanded) {
+        animate(
+            initialValue = expansion.floatValue,
+            targetValue = if (wantExpanded) 1f else 0f,
+            animationSpec = BcMotion.islandSpring(),
+        ) { value, _ -> expansion.floatValue = value }
     }
 
-    val width = shownLayout.baseWidth * scale
-    val height = shownLayout.baseHeight * scale
-    val position = remember(anchor, width, height, offsetX, offsetY) {
-        islandWindowPosition(anchor, width, height, offsetX, offsetY)
-    }
+    val showing = song != null && !(hideWhenPaused && !isPlaying)
+
+    /**
+     * The window's state.
+     *
+     * It never changes. Compose applies a window's own state when the window is created, and
+     * applying it again on every frame of the morph had the window resizing to two different
+     * sizes in turn — the glass juddered between them. AWT is the only thing that moves the
+     * bounds; see below.
+     */
     val state = rememberWindowState(
-        size = islandWindowSize(width, height),
-        position = position,
+        size = DpSize(1.dp, 1.dp),
+        position = WindowPosition.Aligned(androidx.compose.ui.Alignment.TopCenter),
     )
-
-    // The capsule changes size with its layout and the user's scale, and the window has to follow
-    // or the capsule is either clipped or floating in a box of empty space that eats clicks.
-    LaunchedEffect(width, height) {
-        state.size = islandWindowSize(width, height)
-    }
-    LaunchedEffect(position) { state.position = position }
-
-    // The dock is the player while the main window is in front; the capsule takes over the moment
-    // that window is hidden or another application gets the focus.
-    val mainInFront = mainVisible && mainFocused
-    // Nothing to say before a song is loaded: a capsule reading "Nothing playing" over every other
-    // window is a permanent advertisement, not a player.
-    val visible = enabled && song != null && !mainInFront && !(hideWhenPaused && !isPlaying)
 
     Window(
         onCloseRequest = { DesktopDynamicIslandSettings.setEnabled(false) },
-        visible = visible,
+        /**
+         * The window is always on screen, even with nothing to show.
+         *
+         * A window that has never been shown has no size of its own yet, and Compose gives it
+         * one when it is created — with the screen's scaling factor missing, so the capsule was
+         * laid out at one size and drawn at another, a fifth apart. Bringing the window up once,
+         * empty, settles that: it is on the display, it knows how big a pixel is, and it stays
+         * that way for the rest of the session.
+         *
+         * An empty island is a window one pixel across, so it neither shows nor catches a click.
+         */
+        visible = true,
         title = "BitChord Island",
         undecorated = true,
         transparent = true,
@@ -191,6 +198,18 @@ internal fun DesktopIslandWindow() {
         focusable = false,
         state = state,
     ) {
+        /**
+         * The window's own density — the factor that turns the dp everything here is written in
+         * into the pixels that are actually drawn.
+         *
+         * It is read from inside the window rather than from the screen, because this window is
+         * created before it is on screen and picks its density up as it is realised. The two
+         * agree once the capsule is up; in the moment before, the capsule is smaller than it will
+         * be, but it is still in the right place.
+         */
+        val density = LocalDensity.current.density
+        val work = remember(density) { workAreaInDp(density) }
+
         LaunchedEffect(window) {
             // Out of the taskbar and out of Alt-Tab, the way a system overlay behaves.
             runCatching { window.type = java.awt.Window.Type.UTILITY }
@@ -203,266 +222,166 @@ internal fun DesktopIslandWindow() {
             runCatching { window.minimumSize = Dimension(1, 1) }
         }
 
+        /**
+         * Where the pointer is, and whether it is on the glass.
+         *
+         * The glass is the window without the slack its shadow needs, so the island opens when
+         * the pointer is on the capsule itself and not when it merely passes close by.
+         */
+        LaunchedEffect(window, density) {
+            val slack = (ISLAND_WINDOW_PADDING * density).roundToInt()
+            while (true) {
+                val pointer = runCatching { java.awt.MouseInfo.getPointerInfo().location }.getOrNull()
+                val onGlass = pointer != null &&
+                    pointer.x >= window.x + slack && pointer.x < window.x + window.width - slack &&
+                    pointer.y >= window.y + slack && pointer.y < window.y + window.height - slack
+                hovered.value = onGlass
+                delay(POINTER_POLL_MS)
+            }
+        }
+
         // Keyed on the window too: an island switched off and back on gets a fresh window, whose
         // style has to be set again if click-through is still asked for.
         LaunchedEffect(window, clickThrough) {
             DesktopIslandClickThrough.apply(window, clickThrough)
         }
 
-        // While the scrub bar holds the pointer the capsule must stay put: both gestures read the
-        // same drag, so the key change cancels this loop the moment a scrub begins.
-        val dragModifier = if (locked || seeking) {
-            Modifier
-        } else {
-            Modifier.pointerInput(window, anchor, width, height) {
-                awaitEachGesture {
-                    val down = awaitFirstDown(requireUnconsumed = false)
-                    if (!currentEvent.buttons.isPrimaryPressed) return@awaitEachGesture
-                    var travelled = Offset.Zero
-                    var dragging = false
-                    while (true) {
-                        val event = awaitPointerEvent()
-                        val change = event.changes.firstOrNull { it.id == down.id } ?: break
-                        if (!change.pressed) break
-                        val delta = change.positionChange()
-                        travelled += delta
-                        if (!dragging && travelled.getDistance() > viewConfiguration.touchSlop) {
-                            dragging = true
-                        }
-                        if (dragging) {
-                            change.consume()
-                            // The window is moved, not the capsule inside it: a separate window
-                            // has its own position, and moving it is what the OS does cheaply.
-                            val at = window.location
-                            window.setLocation(at.x + delta.x.roundToInt(), at.y + delta.y.roundToInt())
-                        }
-                    }
-                    // Only a real drag is remembered; a click that happened to land on the glass
-                    // must not rewrite the capsule's resting place.
-                    if (dragging) settleIslandWindow(window, anchor, width, height)
+        /**
+         * The window follows the morph.
+         *
+         * Every frame the capsule's size changes, the window that holds it is told its new size
+         * and its new place on the screen. The two therefore move as one thing: the glass is
+         * never clipped by a frame that has not caught up, and never floats in a box of empty
+         * space that would swallow the clicks meant for whatever is underneath.
+         *
+         * AWT is the only thing that touches the bounds. Compose re-applies a window's own size
+         * whenever the window's state changes, and it applies it with a different density than
+         * the one the capsule is drawn at — so the two took turns resizing the window to
+         * different sizes, and the window juddered between them on every frame of the morph.
+         * Leaving the window's state alone keeps one writer and one size.
+         */
+        LaunchedEffect(window, scale, density, showing) {
+            snapshotFlow { expansion.floatValue }.collect { grown ->
+                if (!showing) {
+                    // Nothing to show: the window shrinks to a single pixel, so it neither shows
+                    // nor stands between the pointer and whatever is underneath.
+                    window.setBounds(0, 0, 1, 1)
+                    return@collect
                 }
+                val width = (ISLAND_COLLAPSED_WIDTH +
+                    (ISLAND_EXPANDED_WIDTH - ISLAND_COLLAPSED_WIDTH) * grown) * scale
+                val height = (ISLAND_COLLAPSED_HEIGHT +
+                    (ISLAND_EXPANDED_HEIGHT - ISLAND_COLLAPSED_HEIGHT) * grown) * scale
+                val placed = work?.let { islandPlacedRect(it, width, height) }
+                val x = ((placed?.left ?: 0f) - ISLAND_WINDOW_PADDING) * density
+                val y = ((placed?.top ?: 0f) - ISLAND_WINDOW_PADDING) * density
+                val w = (width + ISLAND_WINDOW_PADDING * 2f) * density
+                val h = (height + ISLAND_WINDOW_PADDING * 2f) * density
+                window.setBounds(
+                    x.roundToInt(),
+                    y.roundToInt(),
+                    w.roundToInt(),
+                    h.roundToInt(),
+                )
             }
         }
 
         Box(
             Modifier
                 .fillMaxSize()
-                .padding(ISLAND_WINDOW_PADDING),
+                .padding(ISLAND_WINDOW_PADDING.dp),
             contentAlignment = Alignment.Center,
         ) {
             Box(
                 Modifier
-                    .hoverable(interactionSource)
-                    .then(dragModifier)
                     .islandContextMenu { menuOpen = true },
             ) {
-                DynamicIslandCard(
-                    song = song,
-                    lines = lines,
-                    positionMs = { DesktopFloatingLyricsManager.currentPositionMs.value },
-                    progress = {
-                        islandProgress(
-                            DesktopFloatingLyricsManager.currentPositionMs.value,
-                            DesktopFloatingLyricsManager.durationMs.value,
-                        )
-                    },
-                    durationMs = { DesktopFloatingLyricsManager.durationMs.value },
-                    isPlaying = isPlaying,
-                    repeatMode = repeatMode,
-                    layout = shownLayout,
-                    scale = scale,
-                    opacity = opacity,
-                    hovered = isHovered,
-                    interactive = true,
-                    onPlayPause = { DesktopFloatingLyricsManager.onPlayPause?.invoke() },
-                    onNext = { DesktopFloatingLyricsManager.onNext?.invoke() },
-                    onPrevious = { DesktopFloatingLyricsManager.onPrevious?.invoke() },
-                    onToggleRepeat = { DesktopFloatingLyricsManager.onToggleRepeat?.invoke() },
-                    onOpenNowPlaying = { DesktopFloatingLyricsManager.onOpenNowPlaying?.invoke() },
-                    // Click-through hands every press to the window underneath, so a scrub bar
-                    // there would only take space and promise something it cannot do.
-                    onSeek = if (clickThrough) null else DesktopFloatingLyricsManager.onSeek,
-                    onSeekStarted = { seeking = true },
-                    onSeekFinished = { seeking = false },
-                    menu = {
-                        if (isHovered || menuOpen) {
-                            Row(
-                                Modifier
-                                    .align(Alignment.TopEnd)
-                                    .padding(top = 5.dp, end = 9.dp),
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                IslandBadge(
-                                    icon = if (locked) Icons.Rounded.Lock else Icons.Rounded.LockOpen,
-                                    tooltip = if (locked) "Unlock" else "Lock position",
-                                    tint = if (locked) Color(0xFFFFD54F) else Color.White,
-                                    onClick = { DesktopDynamicIslandSettings.setLocked(!locked) },
-                                )
-                                IslandBadge(
-                                    icon = Icons.Rounded.MoreHoriz,
-                                    tooltip = "Island menu",
-                                    onClick = { menuOpen = true },
-                                )
-                                IslandBadge(
-                                    icon = Icons.Rounded.Close,
-                                    tooltip = "Hide the island",
-                                    hoverBg = Color(0xFFC42B1C),
-                                    onClick = { DesktopDynamicIslandSettings.setEnabled(false) },
-                                )
-                            }
-                        }
-                        DynamicIslandMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false })
-                    },
-                )
+                if (showing && song != null && !isPlaying) {
+                    // A stopped player is not something you look at, and a stopped player is not
+                    // something you play from here: the island keeps nothing but a button, which is
+                    // what hands the screen back to the music instead of leaving a statue behind.
+                    DesktopIslandDoorbell(onClick = { DesktopIslandState.onOpenNowPlaying?.invoke() })
+                } else {
+                    DesktopIslandCard(
+                        song = song,
+                        lines = lines,
+                        positionMs = { DesktopIslandState.currentPositionMs.value },
+                        durationMs = { DesktopIslandState.durationMs.value },
+                        isPlaying = isPlaying,
+                        repeatMode = repeatMode,
+                        scale = scale,
+                        hovered = hovered.value,
+                        interactive = true,
+                        onPlayPause = { DesktopIslandState.onPlayPause?.invoke() },
+                        onNext = { DesktopIslandState.onNext?.invoke() },
+                        onPrevious = { DesktopIslandState.onPrevious?.invoke() },
+                        onToggleRepeat = { DesktopIslandState.onToggleRepeat?.invoke() },
+                        onOpenNowPlaying = { DesktopIslandState.onOpenNowPlaying?.invoke() },
+                        // Click-through hands every press to the window underneath, so a scrub bar
+                        // there would only take space and promise something it cannot do.
+                        onSeek = if (clickThrough) null else DesktopIslandState.onSeek,
+                        onSeekStarted = { seeking = true },
+                        onSeekFinished = { seeking = false },
+                        menu = {
+                            DynamicIslandMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false })
+                        },
+                    )
+                }
             }
         }
     }
 }
 
 /**
- * A screen's work area, and how many device pixels one dp is on it.
+ * A screen's work area, in device pixels.
  *
- * AWT positions windows and reports screen bounds in device pixels, while everything the capsule
- * is drawn in is dp; the scale is what lets the two agree on a 125% display.
+ * The island's own window is not the main window, so it cannot borrow the main window's idea of
+ * a screen: this is the display the capsule is actually resting on.
  */
-private class IslandScreenArea(
+private class IslandScreenPixels(
     val left: Int,
     val top: Int,
     val right: Int,
     val bottom: Int,
-    val scale: Double,
 )
 
-private fun screenArea(config: java.awt.GraphicsConfiguration): IslandScreenArea {
+private fun screenArea(config: GraphicsConfiguration): IslandScreenPixels {
     val bounds = config.bounds
     val insets = runCatching { Toolkit.getDefaultToolkit().getScreenInsets(config) }.getOrNull()
-    val scale = runCatching { config.defaultTransform.scaleX }.getOrDefault(1.0).takeIf { it > 0.0 } ?: 1.0
-    return IslandScreenArea(
+    return IslandScreenPixels(
         left = bounds.x + (insets?.left ?: 0),
         top = bounds.y + (insets?.top ?: 0),
         right = bounds.x + bounds.width - (insets?.right ?: 0),
         bottom = bounds.y + bounds.height - (insets?.bottom ?: 0),
-        scale = scale,
     )
 }
 
-private fun defaultScreenArea(): IslandScreenArea? = runCatching {
+private fun defaultScreenArea(): IslandScreenPixels? = runCatching {
     screenArea(GraphicsEnvironment.getLocalGraphicsEnvironment().defaultScreenDevice.defaultConfiguration)
 }.getOrNull()
 
-/** The display [x], [y] falls on, or null when the point is outside every screen. */
-private fun screenAreaContaining(x: Int, y: Int): IslandScreenArea? = runCatching {
-    GraphicsEnvironment.getLocalGraphicsEnvironment().screenDevices
-        .map { screenArea(it.defaultConfiguration) }
-        .firstOrNull { x >= it.left && x < it.right && y >= it.top && y < it.bottom }
-}.getOrNull()
-
-/** The capsule window's size in the device pixels AWT positions it in. */
-private fun islandSizePx(width: Dp, height: Dp, scale: Double): Pair<Int, Int> {
-    val w = ((width.value + ISLAND_WINDOW_PADDING.value * 2) * scale).roundToInt()
-    val h = ((height.value + ISLAND_WINDOW_PADDING.value * 2) * scale).roundToInt()
-    return w to h
-}
-
-/** Where [anchor] rests on the primary screen, before any drag offset. Device pixels. */
-private fun islandBaseLocation(anchor: IslandAnchor, width: Dp, height: Dp): Point? {
+/**
+ * The work area of the display the capsule rests on, in the window's own dp.
+ *
+ * The divisor is the island window's density, not the screen's: that is the factor Compose will
+ * use to turn the dp it is given into the pixels it draws, so dividing by it here is what keeps
+ * the capsule the same physical size as everything else and the same distance from the screen's
+ * edges. The two are the same on an unscaled display and differ by exactly the scaling factor on
+ * a scaled one — which is where the capsule used to drift off centre and shrink.
+ */
+private fun workAreaInDp(density: Float): IslandScreen? {
     val screen = defaultScreenArea() ?: return null
-    val (w, h) = islandSizePx(width, height, screen.scale)
-    val margin = (ISLAND_SCREEN_MARGIN * screen.scale).roundToInt()
-    val x = when (anchor) {
-        IslandAnchor.TOP_LEFT, IslandAnchor.BOTTOM_LEFT -> screen.left + margin
-        IslandAnchor.TOP_RIGHT, IslandAnchor.BOTTOM_RIGHT -> screen.right - w - margin
-        else -> screen.left + (screen.right - screen.left - w) / 2
-    }
-    val y = if (anchor.isBottom) screen.bottom - h - margin else screen.top + margin
-    return Point(x, y)
-}
-
-/**
- * Where the capsule's window sits on screen: its anchor's resting place, shifted by the nudge the
- * listener dragged it to, and held inside the display it lands on.
- *
- * Compose hands [WindowPosition.Absolute] values straight to `Window.setLocation`, which is device
- * pixels, so the numbers here are pixels even though the type says dp.
- */
-private fun islandWindowPosition(
-    anchor: IslandAnchor,
-    width: Dp,
-    height: Dp,
-    offsetX: Float,
-    offsetY: Float,
-): WindowPosition {
-    val base = islandBaseLocation(anchor, width, height)
-        ?: return WindowPosition.Aligned(anchor.alignment)
-    val screen = defaultScreenArea() ?: return WindowPosition.Aligned(anchor.alignment)
-    val (w, h) = islandSizePx(width, height, screen.scale)
-    val desiredX = base.x + (offsetX * screen.scale).roundToInt()
-    val desiredY = base.y + (offsetY * screen.scale).roundToInt()
-    // The display the capsule's centre lands on decides how far it may go, so a saved nudge can
-    // never leave it half off-screen — or on a monitor that is no longer attached.
-    val landing = screenAreaContaining(desiredX + w / 2, desiredY + h / 2) ?: screen
-    val x = desiredX.coerceIn(landing.left, (landing.right - w).coerceAtLeast(landing.left))
-    val y = desiredY.coerceIn(landing.top, (landing.bottom - h).coerceAtLeast(landing.top))
-    return WindowPosition(x.dp, y.dp)
-}
-
-/**
- * Nests the capsule against the edge it was dropped near and remembers where that was.
- *
- * The offset is stored in dp from the anchor's resting place, so a nudge survives a resolution
- * change or a different display scale. Within [ISLAND_SNAP_DP] of a work-area edge the capsule
- * snaps to it, which is how "top centre" is reached again after a free-handed drag.
- */
-private fun settleIslandWindow(window: AwtWindow, anchor: IslandAnchor, width: Dp, height: Dp) {
-    val base = islandBaseLocation(anchor, width, height) ?: return
-    val scale = defaultScreenArea()?.scale ?: 1.0
-    val at = window.location
-    val landing = screenAreaContaining(at.x + window.width / 2, at.y + window.height / 2)
-    val snapped = snapIslandLocation(at, window.width, window.height, landing)
-    if (snapped != at) window.setLocation(snapped)
-    DesktopDynamicIslandSettings.saveOffset(
-        x = ((snapped.x - base.x) / scale).toFloat(),
-        y = ((snapped.y - base.y) / scale).toFloat(),
+    if (density <= 0f) return null
+    return IslandScreen(
+        left = screen.left / density,
+        top = screen.top / density,
+        right = screen.right / density,
+        bottom = screen.bottom / density,
     )
 }
 
-/** Pulls [location] onto a work-area edge when it is close, and back inside the screen otherwise. */
-private fun snapIslandLocation(
-    location: Point,
-    width: Int,
-    height: Int,
-    screen: IslandScreenArea?,
-): Point {
-    if (screen == null) return location
-    val margin = (ISLAND_SCREEN_MARGIN * screen.scale).roundToInt()
-    val snap = (ISLAND_SNAP_DP * screen.scale).roundToInt()
-    val left = screen.left + margin
-    val right = screen.right - width - margin
-    val top = screen.top + margin
-    val bottom = screen.bottom - height - margin
-    val x = when {
-        left <= right && abs(location.x - left) <= snap -> left
-        left <= right && abs(location.x - right) <= snap -> right
-        else -> location.x.coerceIn(screen.left, (screen.right - width).coerceAtLeast(screen.left))
-    }
-    val y = when {
-        top <= bottom && abs(location.y - top) <= snap -> top
-        top <= bottom && abs(location.y - bottom) <= snap -> bottom
-        else -> location.y.coerceIn(screen.top, (screen.bottom - height).coerceAtLeast(screen.top))
-    }
-    return Point(x, y)
-}
-
 /** Slack around the capsule inside its window, so the drop shadow has somewhere to land. */
-private val ISLAND_WINDOW_PADDING = 14.dp
+private const val ISLAND_WINDOW_PADDING = 14f
 
-/** The capsule plus its shadow slack, in dp. */
-private fun islandWindowSize(width: Dp, height: Dp): DpSize =
-    DpSize(width + ISLAND_WINDOW_PADDING * 2, height + ISLAND_WINDOW_PADDING * 2)
-
-/** How far the capsule's window sits from the screen edge. */
-private const val ISLAND_SCREEN_MARGIN = 18
-
-/** How close to an edge a drop must land to be pulled onto it. */
-private const val ISLAND_SNAP_DP = 48
+/** How often the pointer's place on the screen is read. */
+private const val POINTER_POLL_MS = 16L

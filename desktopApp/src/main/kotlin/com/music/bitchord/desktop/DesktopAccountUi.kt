@@ -24,7 +24,6 @@ import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.rounded.Close
 import androidx.compose.material.icons.rounded.ContentPaste
-import androidx.compose.material.icons.rounded.ManageAccounts
 import androidx.compose.material.icons.rounded.Person
 import androidx.compose.material.icons.rounded.Settings
 import androidx.compose.material3.CircularProgressIndicator
@@ -110,11 +109,12 @@ internal fun DesktopAccountSelector(
     busy: Boolean,
     onSelect: (DesktopGoogleAccount, DesktopYouTubeProfile) -> Unit,
     onAddAccount: () -> Unit,
-    onRemoveAccount: (DesktopGoogleAccount) -> Unit,
+    onSignOut: (DesktopGoogleAccount) -> Unit,
     onOpenSettings: () -> Unit,
     onDismiss: () -> Unit,
 ) {
-    var managing by remember { mutableStateOf(false) }
+    // Which account is waiting for a second tap to be signed out.
+    var confirming by remember { mutableStateOf<String?>(null) }
     Box(Modifier.fillMaxSize()) {
         // The scrim is its own layer rather than a modifier on the container.
         Box(
@@ -169,12 +169,30 @@ internal fun DesktopAccountSelector(
                 }
                 accounts.forEach { account ->
                     item(key = "header-${account.accountId}") {
-                        Text(
-                            account.email.ifBlank { account.name.ifBlank { "Account" } },
-                            style = MaterialTheme.typography.labelMedium,
-                            color = DesktopSecondary,
-                            modifier = Modifier.padding(start = 20.dp, end = 20.dp, top = 12.dp, bottom = 4.dp),
-                        )
+                        Row(
+                            Modifier.fillMaxWidth()
+                                .padding(start = 20.dp, end = 12.dp, top = 12.dp, bottom = 4.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Text(
+                                account.email.ifBlank { account.name.ifBlank { "Account" } },
+                                style = MaterialTheme.typography.labelMedium,
+                                color = DesktopSecondary,
+                                modifier = Modifier.weight(1f),
+                            )
+                            DesktopSignOutButton(
+                                confirming = confirming == account.accountId,
+                                onClick = {
+                                    if (confirming == account.accountId) {
+                                        confirming = null
+                                        onSignOut(account)
+                                    } else {
+                                        confirming = account.accountId
+                                    }
+                                },
+                                onCancel = { confirming = null },
+                            )
+                        }
                     }
                     items(account.profiles.size, key = { "p-${account.accountId}-$it" }) { index ->
                         val profile = account.profiles[index]
@@ -182,20 +200,11 @@ internal fun DesktopAccountSelector(
                             profile = profile,
                             selected = account.accountId == activeAccountId &&
                                 profile.profileId == activeProfileId,
-                            managing = managing,
                             onClick = { onSelect(account, profile); onDismiss() },
-                            onRemove = { onRemoveAccount(account) },
                         )
                     }
                 }
                 item { DesktopSelectorAction(BitChordIcons.Plus, "Add account", onAddAccount) }
-                if (accounts.isNotEmpty()) {
-                    item {
-                        DesktopSelectorAction(Icons.Rounded.ManageAccounts, "Manage accounts") {
-                            managing = !managing
-                        }
-                    }
-                }
                 item { DesktopSelectorAction(Icons.Rounded.Settings, "Settings", onOpenSettings) }
                 item { Spacer(Modifier.height(10.dp)) }
             }
@@ -203,19 +212,64 @@ internal fun DesktopAccountSelector(
     }
 }
 
+/**
+ * The way out of an account.
+ *
+ * Signing out throws the stored session away, so it asks twice: the first tap arms the button and
+ * the second one does it. There is no way back from it without signing in again, and a stray tap
+ * next to a profile row should not cost the listener their session.
+ */
+@Composable
+private fun DesktopSignOutButton(
+    confirming: Boolean,
+    onClick: () -> Unit,
+    onCancel: () -> Unit,
+) {
+    if (confirming) {
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Text(
+                DesktopStrings["sign_out", "Sign out"],
+                color = DesktopDestructive,
+                style = MaterialTheme.typography.labelMedium,
+            )
+            Spacer(Modifier.width(8.dp))
+            Text(
+                DesktopStrings["cancel", "Cancel"],
+                color = DesktopSecondary,
+                style = MaterialTheme.typography.labelMedium,
+                modifier = Modifier.clickable(onClick = onCancel),
+            )
+        }
+    } else {
+        Text(
+            DesktopStrings["sign_out", "Sign out"],
+            color = DesktopSecondary,
+            style = MaterialTheme.typography.labelMedium,
+            modifier = Modifier
+                .clip(RoundedCornerShape(8.dp))
+                .clickable(onClick = onClick)
+                .padding(horizontal = 8.dp, vertical = 4.dp),
+        )
+    }
+}
+
 @Composable
 private fun DesktopProfileRow(
     profile: DesktopYouTubeProfile,
     selected: Boolean,
-    managing: Boolean,
     onClick: () -> Unit,
-    onRemove: () -> Unit,
 ) {
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 56.dp)
-            .clickable(onClick = if (managing) onRemove else onClick)
+            .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -245,9 +299,13 @@ private fun DesktopProfileRow(
                 overflow = TextOverflow.Ellipsis,
             )
         }
-        when {
-            managing -> Text(DesktopStrings["sign_out", "Sign out"], color = DesktopDestructive, style = MaterialTheme.typography.labelMedium)
-            selected -> Icon(BitChordIcons.Check, DesktopStrings["selected", "Selected"], tint = DesktopAccent, modifier = Modifier.size(20.dp))
+        if (selected) {
+            Icon(
+                BitChordIcons.Check,
+                DesktopStrings["selected", "Selected"],
+                tint = DesktopAccent,
+                modifier = Modifier.size(20.dp),
+            )
         }
     }
 }

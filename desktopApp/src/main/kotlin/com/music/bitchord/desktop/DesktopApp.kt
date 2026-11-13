@@ -2206,7 +2206,7 @@ fun BitChordDesktopApp() {
                 DesktopWindowVisibility.show()
                 openSettings()
             },
-            onToggleIsland = { DesktopFloatingLyricsManager.toggle() },
+            onToggleIsland = { DesktopIslandState.toggle() },
             onQuit = {
                 // Native work first: the audio thread and the media controls are inside FFmpeg,
                 // WASAPI and WinRT, and exitProcess would unload those libraries under them.
@@ -2662,9 +2662,9 @@ fun BitChordDesktopApp() {
         }
         // The island's own menus reach the app through here, so a right-click on the capsule can
         // open the player or Settings exactly as the toolbar's buttons do.
-        DesktopFloatingLyricsManager.onOpenNowPlaying = { overlays.nowPlaying = selectedSong != null }
-        DesktopFloatingLyricsManager.onOpenSettings = { openSettings() }
-        DesktopFloatingLyricsManager.onOpenLyrics = { overlays.toggleSidePanel(DesktopSidePanel.LYRICS) }
+        DesktopIslandState.onOpenNowPlaying = { overlays.nowPlaying = selectedSong != null }
+        DesktopIslandState.onOpenSettings = { openSettings() }
+        DesktopIslandState.onOpenLyrics = { overlays.toggleSidePanel(DesktopSidePanel.LYRICS) }
     }
 
     // The engine's measured stream, as the player's quality badge and stats line read it.
@@ -2702,33 +2702,33 @@ fun BitChordDesktopApp() {
     }
 
     LaunchedEffect(selectedSong, playback.isPlaying, sharedLyrics, repeatMode, liveQueue) {
-        DesktopFloatingLyricsManager.currentSong.value = selectedSong
-        DesktopFloatingLyricsManager.isPlaying.value = playback.isPlaying
-        DesktopFloatingLyricsManager.lyricsLines.value = sharedLyrics
-        DesktopFloatingLyricsManager.repeatMode.value = repeatMode
+        DesktopIslandState.currentSong.value = selectedSong
+        DesktopIslandState.isPlaying.value = playback.isPlaying
+        DesktopIslandState.lyricsLines.value = sharedLyrics
+        DesktopIslandState.repeatMode.value = repeatMode
         // The queue rides along, so the capsule's menu can start any row of it — the same jump
         // the queue sheet's tap makes — with the main window closed.
-        DesktopFloatingLyricsManager.queueSongs.value = liveQueue.songs
-        DesktopFloatingLyricsManager.queueIndex.value = liveQueue.index
-        DesktopFloatingLyricsManager.onPlayPause = { if (selectedSong != null) togglePlayPauseFromUser() }
-        DesktopFloatingLyricsManager.onNext = { playNext() }
-        DesktopFloatingLyricsManager.onPrevious = { playPrevious() }
-        DesktopFloatingLyricsManager.onPlayQueueIndex = ::playQueueIndex
+        DesktopIslandState.queueSongs.value = liveQueue.songs
+        DesktopIslandState.queueIndex.value = liveQueue.index
+        DesktopIslandState.onPlayPause = { if (selectedSong != null) togglePlayPauseFromUser() }
+        DesktopIslandState.onNext = { playNext() }
+        DesktopIslandState.onPrevious = { playPrevious() }
+        DesktopIslandState.onPlayQueueIndex = ::playQueueIndex
         // The island's scrub row speaks in fractions of the song; the player takes milliseconds.
-        DesktopFloatingLyricsManager.onSeek = { fraction ->
+        DesktopIslandState.onSeek = { fraction ->
             val duration = playback.durationMs
             if (duration > 0L) seekPlayer((fraction.coerceIn(0f, 1f) * duration).toLong())
         }
-        DesktopFloatingLyricsManager.onToggleRepeat = {
+        DesktopIslandState.onToggleRepeat = {
             repeatMode = repeatMode.next()
             persistence.saveString("repeat_mode", repeatMode.name)
         }
     }
     LaunchedEffect(playbackEngine) {
         playbackEngine.state.collect {
-            DesktopFloatingLyricsManager.currentPositionMs.value = it.positionMs
+            DesktopIslandState.currentPositionMs.value = it.positionMs
             // The island's progress hairline is the song's own progress, not the lyric's.
-            DesktopFloatingLyricsManager.durationMs.value = it.durationMs
+            DesktopIslandState.durationMs.value = it.durationMs
         }
     }
     val sharedLyricsSource = remember(lyrics) { lyrics?.source?.let(::lyricsSourceNamed) }
@@ -2859,7 +2859,7 @@ fun BitChordDesktopApp() {
                         // Windows' own shortcut for the island, so it is reachable without the
                         // mouse while the user is working in something else.
                         event.isCtrlPressed && event.isAltPressed && event.key == Key.D -> {
-                            DesktopFloatingLyricsManager.toggle()
+                            DesktopIslandState.toggle()
                             true
                         }
                         event.key == Key.DirectionLeft && event.isAltPressed && !overlays.nowPlaying -> {
@@ -3243,7 +3243,7 @@ fun BitChordDesktopApp() {
                                 activeProfileId = profile.profileId
                             },
                             onAddAccount = { overlays.accounts = false; overlays.signIn = true },
-                            onRemoveAccount = { account ->
+                            onSignOut = { account ->
                                 scope.launch {
                                     accounts = withContext(Dispatchers.IO) {
                                         DesktopAccounts.remove(account.accountId)
@@ -3251,6 +3251,10 @@ fun BitChordDesktopApp() {
                                     }
                                     activeAccountId = DesktopAccounts.activeAccountId()
                                     activeProfileId = DesktopAccounts.activeProfileId()
+                                    DesktopTrackLog.log(
+                                        "accounts: signed out of " +
+                                            account.email.ifBlank { account.name.ifBlank { "an account" } },
+                                    )
                                 }
                             },
                             onOpenSettings = { overlays.accounts = false; openSettings() },
